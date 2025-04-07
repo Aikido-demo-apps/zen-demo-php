@@ -2,8 +2,9 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vite build",
-        "dev": "vite"
+        "build": "npm run copy-static && vite build",
+        "dev": "npm run copy-static && vite",
+        "copy-static": "cp -vR resources/public/ public/"
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.0.0",

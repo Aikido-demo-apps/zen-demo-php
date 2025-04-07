@@ -21,3 +21,9 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# Resource files
+public/css
+public/js
+public/New-Grotesk
+public/aikido_logo.svg
