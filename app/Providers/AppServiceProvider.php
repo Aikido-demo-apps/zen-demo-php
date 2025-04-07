@@ -23,7 +23,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $kernel = $this->app->make(Kernel::class);
-        $kernel->pushMiddleware(AikidoMiddleware::class);
         $kernel->pushMiddleware(UserMiddleware::class);
+        $kernel->pushMiddleware(AikidoMiddleware::class);
     }
 }
