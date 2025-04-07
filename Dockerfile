@@ -116,6 +116,8 @@ RUN rsync -ar /var/www/html/public-npm/ /var/www/html/public/ \
     && rm -rf /var/www/html/public-npm \
     && chown -R www-data:www-data /var/www/html/public
 
+ENV AIKIDO_BLOCKING=true
+
 # 5. Setup Entrypoint
 EXPOSE 8080
 
