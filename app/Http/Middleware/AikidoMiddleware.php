@@ -17,15 +17,6 @@ class AikidoMiddleware
             return $next($request);
         }
 
-        // Get the authenticated user's ID from Laravel's Auth system
-        $userId = Auth::id();
-
-        // If a user is authenticated, set the user in Aikido's firewall context
-        if ($userId) {
-            // If username is available, you can set it as the second parameter in the \aikido\set_user function call
-            \aikido\set_user($userId);
-        }
-
         // Check blocking decision from Aikido
         $decision = \aikido\should_block_request();
 
