@@ -3,6 +3,9 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use App\Http\Middleware\UserMiddleware;
+use App\Http\Middleware\AikidoMiddleware;
+use Illuminate\Contracts\Http\Kernel;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -19,6 +22,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        $kernel = $this->app->make(Kernel::class);
+        $kernel->pushMiddleware(AikidoMiddleware::class);
+        $kernel->pushMiddleware(UserMiddleware::class);
     }
 }
