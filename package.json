@@ -3,7 +3,7 @@
     "type": "module",
     "scripts": {
         "production": "npm run copy-static",
-        "copy-static": "cp -vR resources/public/ public/"
+        "copy-static": "cp -vR resources/public/* public/"
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.0.0",
