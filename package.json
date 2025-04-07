@@ -2,8 +2,7 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "npm run copy-static && vite build",
-        "dev": "npm run copy-static && vite",
+        "production": "npm run copy-static",
         "copy-static": "cp -vR resources/public/ public/"
     },
     "devDependencies": {
