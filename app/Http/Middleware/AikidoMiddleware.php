@@ -20,7 +20,7 @@ class AikidoMiddleware
         // Check blocking decision from Aikido
         $decision = \aikido\should_block_request();
 
-        if ($decision->block) {
+        if ($decision !== null && $decision->block) {
             if ($decision->type == "blocked") {
                 if ($decision->trigger == "user") {
                     return response('Your user is blocked!', 403);
