@@ -30,7 +30,13 @@ class Helpers
             $response = Http::get($urlString);
             return $response->body();
         } catch (Exception $e) {
-            return "Error: " . $e->getMessage();
+            if (str_contains($e->getMessage(), "Aikido firewall has blocked")) {
+                return response()->json(["error" => $e->getMessage()], 500);
+            } else if (str_contains($e->getMessage(), "Could not resolve host")) {
+                return response()->json(["error" => $e->getMessage()], 500);
+            } else {
+                return response()->json(["error" => $e->getMessage()], 400);
+            }
         }
     }
 
