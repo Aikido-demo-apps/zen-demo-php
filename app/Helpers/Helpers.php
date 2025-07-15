@@ -48,6 +48,15 @@ class Helpers
             $fullPath = resource_path('blogs/' . $filePath);
             $content = file_get_contents($fullPath);
         } catch (Exception $e) {
+            if (str_contains($e->getMessage(), "Aikido firewall has blocked") || 
+                str_contains($e->getMessage(), "No such file or directory") ||
+                str_contains($e->getMessage(), "Is a directory") ||
+                str_contains($e->getMessage(), "Array to string conversion") 
+            ) {
+                return response()->json(["error" => $e->getMessage()], 500);
+            } else {
+                return response()->json(["error" => $e->getMessage()], 400);
+            }
             $content = "Error: " . $e->getMessage();
         }
         return $content;
