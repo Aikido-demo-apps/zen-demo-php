@@ -18,7 +18,11 @@ class Helpers
                 $output = "Command execution failed with code: $returnVar";
             }
         } catch (Exception $e) {
-            $output = "Error: " . $e->getMessage();
+            if (str_contains($e->getMessage(), "Aikido firewall has blocked")) {
+                return response()->json(["error" => $e->getMessage()], 500);
+            } else {
+                return response()->json(["error" => $e->getMessage()], 400);
+            }
         }
         return $output;
     }
