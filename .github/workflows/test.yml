@@ -16,6 +16,8 @@ jobs:
       - name: Checkout action
         id: checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name:  Run Firewall QA Tests
         uses: AikidoSec/firewall-tester-action@releases/v1
@@ -25,4 +27,5 @@ jobs:
             '--env-file=./zen-demo/.env.example -e
             APP_KEY=base64:W2v6u6VR4lURkxuMT9xZ6pdhXSt5rxsmWTbd1HGqlIM='
           sleep_before_test: 20
+
           
