@@ -1,0 +1,28 @@
+name: Test
+on:
+  push:
+    branches:
+      - main
+      - dev-testing
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Firewall Tests 
+    runs-on: ubuntu-latest
+    steps:
+      
+      - name: Checkout action
+        id: checkoutAikidoSec/firewall-tester-action@releases/v1
+        uses: actions/checkout@v4
+
+      - name:  Run Firewall QA Tests
+        uses: AikidoSec/firewall-tester-action@releases/v1
+        with:
+          dockerfile_path: ./Dockerfile
+          extra_args:
+            '--env-file=./zen-demo/.env.example -e
+            APP_KEY=base64:W2v6u6VR4lURkxuMT9xZ6pdhXSt5rxsmWTbd1HGqlIM='
+          sleep_before_test: 20
+          
