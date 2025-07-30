@@ -24,7 +24,7 @@ jobs:
         with:
           dockerfile_path: ./Dockerfile
           extra_args:
-            '--env-file=./zen-demo/.env.example -e
+            '--env-file=.env.example -e
             APP_KEY=base64:W2v6u6VR4lURkxuMT9xZ6pdhXSt5rxsmWTbd1HGqlIM='
           sleep_before_test: 20
 
