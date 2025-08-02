@@ -18,7 +18,11 @@ class Helpers
                 $output = "Command execution failed with code: $returnVar";
             }
         } catch (Exception $e) {
-            $output = "Error: " . $e->getMessage();
+            if (str_contains($e->getMessage(), "Aikido firewall has blocked")) {
+                return response()->json(["error" => $e->getMessage()], 500);
+            } else {
+                return response()->json(["error" => $e->getMessage()], 400);
+            }
         }
         return $output;
     }
@@ -30,7 +34,13 @@ class Helpers
             $response = Http::get($urlString);
             return $response->body();
         } catch (Exception $e) {
-            return "Error: " . $e->getMessage();
+            if (str_contains($e->getMessage(), "Aikido firewall has blocked")) {
+                return response()->json(["error" => $e->getMessage()], 500);
+            } else if (str_contains($e->getMessage(), "Could not resolve host")) {
+                return response()->json(["error" => $e->getMessage()], 500);
+            } else {
+                return response()->json(["error" => $e->getMessage()], 400);
+            }
         }
     }
 
@@ -42,6 +52,15 @@ class Helpers
             $fullPath = resource_path('blogs/' . $filePath);
             $content = file_get_contents($fullPath);
         } catch (Exception $e) {
+            if (str_contains($e->getMessage(), "Aikido firewall has blocked") || 
+                str_contains($e->getMessage(), "No such file or directory") ||
+                str_contains($e->getMessage(), "Is a directory") ||
+                str_contains($e->getMessage(), "Array to string conversion") 
+            ) {
+                return response()->json(["error" => $e->getMessage()], 500);
+            } else {
+                return response()->json(["error" => $e->getMessage()], 400);
+            }
             $content = "Error: " . $e->getMessage();
         }
         return $content;
