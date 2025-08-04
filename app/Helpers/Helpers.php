@@ -4,6 +4,7 @@ namespace App\Helpers;
 
 use Exception;
 use Illuminate\Support\Facades\Http;
+use Symfony\Component\Filesystem\Path;
 
 class Helpers
 {
@@ -49,11 +50,37 @@ class Helpers
         $content = "";
         try {
             // Intentionally vulnerable to path traversal
-            $fullPath = resource_path('blogs/' . $filePath);
+            echo "filePath: " . $filePath . "\n";
+            var_dump($_GET['path']);
+            #$fullPath = resource_path('blogs/' . $filePath);
+            $fullPath = "/var/www/html/resources/blogs/" . $filePath;
+            echo "fullPath: " . $fullPath . "\n";
             $content = file_get_contents($fullPath);
         } catch (Exception $e) {
             if (str_contains($e->getMessage(), "Aikido firewall has blocked") || 
-                str_contains($e->getMessage(), "No such file or directory") ||
+                str_contains($e->get2Message(), "No such file or directory") ||
+                str_contains($e->getMessage(), "Is a directory") ||
+                str_contains($e->getMessage(), "Array to string conversion") 
+            ) {
+                return response()->json(["error" => $e->getMessage()], 500);
+            } else {
+                return response()->json(["error" => $e->getMessage()], 400);
+            }
+            $content = "Error: " . $e->getMessage();
+        }
+        return $content;
+    }
+
+    public static function readFile2($filePath)
+    {
+        $content = "";
+        try {
+            // Intentionally vulnerable to path traversal
+            $fullPath =  Path::join(resource_path('blogs'), $filePath);
+            $content = file_get_contents($fullPath);
+        } catch (Exception $e) {
+            if (str_contains($e->getMessage(), "Aikido firewall has blocked") || 
+                str_contains($e->get2Message(), "No such file or directory") ||
                 str_contains($e->getMessage(), "Is a directory") ||
                 str_contains($e->getMessage(), "Array to string conversion") 
             ) {

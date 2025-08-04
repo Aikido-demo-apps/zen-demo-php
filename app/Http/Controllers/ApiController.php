@@ -26,12 +26,8 @@ class ApiController extends Controller
         $data = $request->json()->all();
         $name = $data['name'] ?? '';
 
-        $rowsCreated = DatabaseHelper::createPetByName($name);
-
-        if ($rowsCreated == -1) {
-            return "Database error occurred";
-        }
-        return "Success!";
+        $response = DatabaseHelper::createPetByName($name);
+        return $response;
     }
 
     public function executeCommandPost(Request $request)
@@ -71,6 +67,13 @@ class ApiController extends Controller
     {
         $filePath = $request->query('path');
         $content = Helpers::readFile($filePath);
+        return $content;
+    }
+
+    public function readFile2(Request $request)
+    {
+        $filePath = $request->query('path');
+        $content = Helpers::readFile2($filePath);
         return $content;
     }
 }

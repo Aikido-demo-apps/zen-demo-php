@@ -85,10 +85,13 @@ class DatabaseHelper
             // Intentionally vulnerable to SQL injection by using string concatenation
             $query = "INSERT INTO pets (pet_name, owner) VALUES ('" . $petName . "', 'Aikido Security')";
             $rowsAffected = DB::statement($query);
-            return $rowsAffected ? 1 : 0;
+            return $rowsAffected ? response()->json(["success" => "Pet created successfully"], 200) : response()->json(["error" => "Failed to create pet"], 400);
         } catch (Exception $e) {
-            echo "Database error occurred: " . $e->getMessage();
+            if (str_contains($e->getMessage(), "Aikido firewall has blocked an SQL injection")) {
+                return response()->json(["error" => $e->getMessage()], 500);
+            } else {
+                return response()->json(["error" => "Database error occurred: " . $e->getMessage()], 400);
+            }
         }
-        return -1;
     }
 }

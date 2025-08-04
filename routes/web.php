@@ -25,3 +25,4 @@ Route::get('/api/execute/{command}', [ApiController::class, 'executeCommandGet']
 Route::post('/api/request', [ApiController::class, 'makeRequest']);
 Route::post('/api/request2', [ApiController::class, 'makeRequest2']);
 Route::get('/api/read', [ApiController::class, 'readFile']);
+Route::get('/api/read2', [ApiController::class, 'readFile2']);
