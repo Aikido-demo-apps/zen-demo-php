@@ -4,7 +4,6 @@ namespace App\Helpers;
 
 use Exception;
 use Illuminate\Support\Facades\Http;
-use Symfony\Component\Filesystem\Path;
 
 class Helpers
 {
@@ -52,7 +51,6 @@ class Helpers
             // Intentionally vulnerable to path traversal
             echo "filePath: " . $filePath . "\n";
             var_dump($_GET['path']);
-            #$fullPath = resource_path('blogs/' . $filePath);
             $fullPath = "/var/www/html/resources/blogs/" . $filePath;
             echo "fullPath: " . $fullPath . "\n";
             $content = file_get_contents($fullPath);
@@ -76,7 +74,7 @@ class Helpers
         $content = "";
         try {
             // Intentionally vulnerable to path traversal
-            $fullPath =  Path::join(resource_path('blogs'), $filePath);
+            $fullPath = resource_path('blogs/' . $filePath);
             $content = file_get_contents($fullPath);
         } catch (Exception $e) {
             if (str_contains($e->getMessage(), "Aikido firewall has blocked") || 
