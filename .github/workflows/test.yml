@@ -27,6 +27,5 @@ jobs:
             '--env-file=.env.example -e
             APP_KEY=base64:W2v6u6VR4lURkxuMT9xZ6pdhXSt5rxsmWTbd1HGqlIM='
           sleep_before_test: 20
-          test_timeout: 420
 
           
