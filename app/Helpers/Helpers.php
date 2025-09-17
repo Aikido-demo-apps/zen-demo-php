@@ -36,7 +36,7 @@ class Helpers
         } catch (Exception $e) {
             if (str_contains($e->getMessage(), "Aikido firewall has blocked")) {
                 return response()->json(["error" => $e->getMessage()], 500);
-            } else if (str_contains($e->getMessage(), "Could not resolve host")) {
+            } else if (str_contains($e->getMessage(), "Could not resolve host") || str_contains($e->getMessage(), "Unable to parse URI")) {
                 return response()->json(["error" => $e->getMessage()], 500);
             } else {
                 return response()->json(["error" => $e->getMessage()], 400);
