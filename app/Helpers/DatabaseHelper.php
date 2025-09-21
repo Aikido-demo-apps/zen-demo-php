@@ -36,9 +36,9 @@ class DatabaseHelper
                 $owner = $row->owner;
 
                 // Validate input for XSS risks
-                // if (!self::isValidInput($name)) {
-                //     $name = "[REDACTED: XSS RISK]";
-                // }
+                if (!self::isValidInput($name)) {
+                    $name = "[REDACTED: XSS RISK]";
+                }
                 if (!self::isValidInput($owner)) {
                     $owner = "[REDACTED: XSS RISK]";
                 }

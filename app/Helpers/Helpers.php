@@ -30,6 +30,42 @@ class Helpers
     public static function makeHttpRequest($urlString)
     {
         try {
+            // Initialize cURL session
+            $ch = curl_init();
+    
+            // Set cURL options
+            curl_setopt($ch, CURLOPT_URL, $urlString);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); 
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); 
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30); 
+    
+            // Execute the request
+            $response = curl_exec($ch);
+    
+            // Check for errors
+            if (curl_errno($ch)) {
+                throw new Exception("cURL error: " . curl_error($ch));
+            }
+    
+            // Get HTTP status code
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    
+            // Close cURL session
+            curl_close($ch);
+    
+            // Return response and status code
+            return  response()->json($response, $httpCode);
+    
+        } catch (Exception $e) {
+            return response()->json($e->getMessage(), 500);
+        }
+    }
+    
+    
+
+    public static function makeHttpRequest2($urlString)
+    {
+        try {
             // Intentionally vulnerable to SSRF
             $response = Http::get($urlString);
             return $response->body();
