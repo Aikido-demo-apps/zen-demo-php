@@ -60,6 +60,8 @@ class ApiController extends Controller
         $data = $request->json()->all();
         $url = $data['url'] ?? '';
 
+        $url = $data['another_url'] ?? ''; // Let's try a harder one
+
         $response = Helpers::makeHttpRequest($url);
         return $response;
     }
