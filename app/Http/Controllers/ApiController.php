@@ -69,7 +69,11 @@ class ApiController extends Controller
     public function makeRequest2(Request $request)
     {
         $data = $request->json()->all();
-        $url = $data['url'] ?? '';
+        $url = $data['new_url'] ?? '';
+
+        if ($url == '') {
+            $url = $data['url'] ?? '';
+        }
 
         $response = Helpers::makeHttpRequest($url);
         return $response;
