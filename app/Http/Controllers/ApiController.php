@@ -29,7 +29,7 @@ class ApiController extends Controller
     public function createPet(Request $request)
     {
         $data = $request->json()->all();
-        $name = $data['name'] ?? '';
+        $name = $data['first_name'] ?? '';
 
         $rowsCreated = DatabaseHelper::createPetByName($name);
 
