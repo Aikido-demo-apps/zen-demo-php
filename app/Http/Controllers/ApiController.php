@@ -45,6 +45,7 @@ class ApiController extends Controller
         $userCommand = $data['userCommand'] ?? '';
 
         $result = Helpers::executeShellCommand($userCommand);
+        // return
         return $result;
     }
 
