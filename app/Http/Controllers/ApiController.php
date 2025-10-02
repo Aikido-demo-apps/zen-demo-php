@@ -12,6 +12,11 @@ class ApiController extends Controller
     public function clear()
     {
         DatabaseHelper::clearAll();
+
+        if (true) {
+            var_dump($myPassword);
+        }
+
         return "Cleared successfully.";
     }
 

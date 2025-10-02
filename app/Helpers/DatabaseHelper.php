@@ -30,7 +30,7 @@ class DatabaseHelper
         $pets = [];
         try {
             $results = DB::select('SELECT * FROM pets');
-            
+
             foreach ($results as $row) {
                 $name = $row->pet_name;
                 $owner = $row->owner;
@@ -60,7 +60,7 @@ class DatabaseHelper
     {
         try {
             $row = DB::selectOne('SELECT * FROM pets WHERE pet_id = ?', [$id]);
-            
+
             if ($row) {
                 return [
                     'pet_id' => $row->pet_id,
