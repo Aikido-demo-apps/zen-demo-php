@@ -33,6 +33,7 @@ class ApiController extends Controller
 
         $rowsCreated = DatabaseHelper::createPetByName($name);
 
+        // this checks if rows that are created equals -1
         if ($rowsCreated == -1) {
             return "Database error occurred";
         }
