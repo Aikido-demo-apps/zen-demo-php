@@ -67,9 +67,6 @@ class ApiController extends Controller
     public function makeRequest2(Request $request)
     {
         $data = $request->json()->all();
-        if (empty($data['url'])) {
-            throw new \InvalidArgumentException('url is required');
-        }
         $url = $data['url'] ?? '';
 
         $response = Helpers::makeHttpRequest($url);
