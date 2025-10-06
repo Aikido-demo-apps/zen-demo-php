@@ -24,6 +24,7 @@ class HomeController extends Controller
 
     public function request()
     {
+        // return request.html
         return File::get(base_path('resources') . '/request.html');
     }
 
