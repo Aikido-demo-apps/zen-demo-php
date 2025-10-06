@@ -30,6 +30,7 @@ class HomeController extends Controller
 
     public function read()
     {
+        // return read_file.html
         return File::get(base_path('resources') . '/read_file.html');
     }
 
