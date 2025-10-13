@@ -1,0 +1,415 @@
+#!/usr/bin/env python3
+"""
+Control Server for Apache + mod_php
+Manages the Apache web server running the PHP demo app
+"""
+import os
+import subprocess
+import json
+from datetime import datetime
+from flask import Flask, jsonify, request
+import signal
+import sys
+import threading
+import time
+
+app = Flask(__name__)
+
+# Configuration
+APACHE_LOG_ERROR = "/var/log/apache2/error.log"
+APACHE_LOG_ACCESS = "/var/log/apache2/access.log"
+APACHE_LOG_OTHER = "/var/log/apache2/other_vhosts_access.log"
+
+# Global state
+apache_process = None
+server_state = {
+    "status": "stopped",
+    "last_action": None,
+    "last_action_time": None,
+    "pid": None
+}
+
+
+def log_action(action, status="success", message=""):
+    """Log server actions"""
+    timestamp = datetime.now().isoformat()
+    server_state["last_action"] = action
+    server_state["last_action_time"] = timestamp
+    print(f"[{timestamp}] {action}: {status} - {message}", flush=True)
+
+
+def get_apache_pid():
+    """Get Apache PID from pidfile or ps"""
+    try:
+        # Try pidfile first
+        if os.path.exists("/var/run/apache2/apache2.pid"):
+            with open("/var/run/apache2/apache2.pid", "r") as f:
+                return int(f.read().strip())
+        
+        # Fallback to ps command
+        result = subprocess.run(
+            ["pgrep", "-f", "apache2"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            pids = result.stdout.strip().split('\n')
+            return int(pids[0]) if pids else None
+    except Exception as e:
+        print(f"Error getting Apache PID: {e}", flush=True)
+    return None
+
+
+def check_apache_status():
+    """Check if Apache is running"""
+    # Primary method: check for apache2 processes
+    try:
+        result = subprocess.run(
+            ["pgrep", "-x", "apache2"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return True
+    except Exception:
+        pass
+    
+    # Fallback: check PID file
+    pid = get_apache_pid()
+    if pid:
+        try:
+            os.kill(pid, 0)  # Check if process exists
+            return True
+        except OSError:
+            return False
+    
+    return False
+
+
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint"""
+    return jsonify({
+        "status": "healthy",
+        "service": "apache-control-server",
+        "timestamp": datetime.now().isoformat()
+    })
+
+
+@app.route('/status', methods=['GET'])
+def status():
+    """Get server status"""
+    is_running = check_apache_status()
+    pid = get_apache_pid() if is_running else None
+    
+    server_state["status"] = "running" if is_running else "stopped"
+    server_state["pid"] = pid
+    
+    return jsonify({
+        "apache_status": server_state["status"],
+        "apache_pid": pid,
+        "last_action": server_state["last_action"],
+        "last_action_time": server_state["last_action_time"],
+        "timestamp": datetime.now().isoformat()
+    })
+
+
+@app.route('/start_server', methods=['POST'])
+def start_server():
+    """Start Apache server"""
+    try:
+        if check_apache_status():
+            log_action("start_server", "info", "Apache already running")
+            return jsonify({
+                "status": "already_running",
+                "message": "Apache is already running",
+                "pid": get_apache_pid()
+            }), 200
+        
+        # Start Apache
+        result = subprocess.run(
+            ["apachectl", "-k", "start"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            time.sleep(1)  # Give Apache time to start
+            pid = get_apache_pid()
+            server_state["status"] = "running"
+            server_state["pid"] = pid
+            log_action("start_server", "success", f"Apache started with PID {pid}")
+            
+            return jsonify({
+                "status": "success",
+                "message": "Apache started successfully",
+                "pid": pid,
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }), 200
+        else:
+            log_action("start_server", "error", result.stderr)
+            return jsonify({
+                "status": "error",
+                "message": "Failed to start Apache",
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }), 500
+            
+    except Exception as e:
+        log_action("start_server", "error", str(e))
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/stop_server', methods=['POST'])
+def stop_server():
+    """Stop Apache server"""
+    try:
+        if not check_apache_status():
+            log_action("stop_server", "info", "Apache not running")
+            return jsonify({
+                "status": "not_running",
+                "message": "Apache is not running"
+            }), 200
+        
+        # Stop Apache
+        result = subprocess.run(
+            ["apachectl", "-k", "stop"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            time.sleep(1)  # Give Apache time to stop
+            server_state["status"] = "stopped"
+            server_state["pid"] = None
+            log_action("stop_server", "success", "Apache stopped")
+            
+            return jsonify({
+                "status": "success",
+                "message": "Apache stopped successfully",
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }), 200
+        else:
+            log_action("stop_server", "error", result.stderr)
+            return jsonify({
+                "status": "error",
+                "message": "Failed to stop Apache",
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }), 500
+            
+    except Exception as e:
+        log_action("stop_server", "error", str(e))
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/restart', methods=['POST'])
+def restart():
+    """Restart Apache server (hard restart)"""
+    try:
+        result = subprocess.run(
+            ["apachectl", "-k", "restart"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            time.sleep(1)  # Give Apache time to restart
+            pid = get_apache_pid()
+            server_state["status"] = "running"
+            server_state["pid"] = pid
+            log_action("restart", "success", f"Apache restarted with PID {pid}")
+            
+            return jsonify({
+                "status": "success",
+                "message": "Apache restarted successfully",
+                "pid": pid,
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }), 200
+        else:
+            log_action("restart", "error", result.stderr)
+            return jsonify({
+                "status": "error",
+                "message": "Failed to restart Apache",
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }), 500
+            
+    except Exception as e:
+        log_action("restart", "error", str(e))
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/graceful-restart', methods=['POST'])
+def graceful_restart():
+    """Gracefully restart Apache server"""
+    try:
+        result = subprocess.run(
+            ["apachectl", "-k", "graceful"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            time.sleep(1)  # Give Apache time to gracefully restart
+            pid = get_apache_pid()
+            server_state["status"] = "running"
+            server_state["pid"] = pid
+            log_action("graceful-restart", "success", f"Apache gracefully restarted with PID {pid}")
+            
+            return jsonify({
+                "status": "success",
+                "message": "Apache gracefully restarted successfully",
+                "pid": pid,
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }), 200
+        else:
+            log_action("graceful-restart", "error", result.stderr)
+            return jsonify({
+                "status": "error",
+                "message": "Failed to gracefully restart Apache",
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }), 500
+            
+    except Exception as e:
+        log_action("graceful-restart", "error", str(e))
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/get-server-logs', methods=['GET'])
+def get_server_logs():
+    """Get Apache server logs"""
+    try:
+        log_type = request.args.get('type', 'error')  # error, access, or all
+        lines = request.args.get('lines', '100')
+        
+        try:
+            lines = int(lines)
+        except ValueError:
+            lines = 100
+        
+        logs = {}
+        
+        if log_type in ['error', 'all']:
+            if os.path.exists(APACHE_LOG_ERROR):
+                result = subprocess.run(
+                    ["tail", f"-n{lines}", APACHE_LOG_ERROR],
+                    capture_output=True,
+                    text=True
+                )
+                logs['error'] = result.stdout
+            else:
+                logs['error'] = "Error log not found"
+        
+        if log_type in ['access', 'all']:
+            if os.path.exists(APACHE_LOG_ACCESS):
+                result = subprocess.run(
+                    ["tail", f"-n{lines}", APACHE_LOG_ACCESS],
+                    capture_output=True,
+                    text=True
+                )
+                logs['access'] = result.stdout
+            else:
+                logs['access'] = "Access log not found"
+        
+        return jsonify({
+            "status": "success",
+            "logs": logs,
+            "lines": lines,
+            "timestamp": datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        log_action("get-server-logs", "error", str(e))
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/config-test', methods=['GET'])
+def config_test():
+    """Test Apache configuration"""
+    try:
+        result = subprocess.run(
+            ["apachectl", "configtest"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        # apachectl configtest writes to stderr even on success
+        is_success = result.returncode == 0 or "Syntax OK" in result.stderr
+        
+        return jsonify({
+            "status": "success" if is_success else "error",
+            "message": "Configuration test completed",
+            "output": result.stderr + result.stdout,
+            "returncode": result.returncode,
+            "config_valid": is_success
+        }), 200 if is_success else 400
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals"""
+    print(f"\nReceived signal {signum}, shutting down gracefully...", flush=True)
+    
+    # Stop Apache if running
+    if check_apache_status():
+        print("Stopping Apache...", flush=True)
+        subprocess.run(["apachectl", "-k", "stop"], timeout=10)
+    
+    sys.exit(0)
+
+
+if __name__ == '__main__':
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    print("=" * 60, flush=True)
+    print("Apache Control Server Starting", flush=True)
+    print("=" * 60, flush=True)
+    print(f"Listening on port 8081", flush=True)
+    print(f"Available endpoints:", flush=True)
+    print(f"  - GET  /health           - Health check", flush=True)
+    print(f"  - GET  /status           - Get Apache status", flush=True)
+    print(f"  - POST /start_server     - Start Apache", flush=True)
+    print(f"  - POST /stop_server      - Stop Apache", flush=True)
+    print(f"  - POST /restart          - Hard restart Apache", flush=True)
+    print(f"  - POST /graceful-restart - Graceful restart Apache", flush=True)
+    print(f"  - GET  /get-server-logs  - Get Apache logs (params: type=error|access|all, lines=100)", flush=True)
+    print(f"  - GET  /config-test      - Test Apache config", flush=True)
+    print("=" * 60, flush=True)
+    
+    # Start Flask server
+    app.run(host='0.0.0.0', port=8081, debug=False)
+

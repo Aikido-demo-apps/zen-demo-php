@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  php-demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zen-demo-php-apache
+    ports:
+      - "8080:8080"  # Apache web server
+      - "8081:8081"  # Python control server
+    environment:
+      - AIKIDO_BLOCK=true
+      - PHP_DATE_TIMEZONE=UTC
+      - APP_KEY=base64:5oX+xMHgrJBcKah0sjKqjdfekMdVE80sPzPv8B5KJ5k=
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - DB_CONNECTION=pgsql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=mydb
+      - DB_USERNAME=myuser
+      - DB_PASSWORD=mysecretpassword
+      - AIKIDO_DEBUG=true
+      - DATABASE_URL=postgresql://myuser:mysecretpassword@postgres:5432/mydb?sslmode=disable
+      - AIKIDO_DISK_LOGS=true
+    restart: unless-stopped
+    networks:
+      - app-network
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres
+    container_name: postgres
+    environment:
+      - POSTGRES_PASSWORD=mysecretpassword
+      - POSTGRES_USER=myuser
+      - POSTGRES_DB=mydb
+    restart: unless-stopped
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
