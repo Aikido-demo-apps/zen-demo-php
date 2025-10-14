@@ -19,7 +19,7 @@ app = Flask(__name__)
 APACHE_LOG_ERROR = "/var/log/apache2/error.log"
 APACHE_LOG_ACCESS = "/var/log/apache2/access.log"
 APACHE_LOG_OTHER = "/var/log/apache2/other_vhosts_access.log"
-
+APACHE_PIDFILE = "/var/run/apache2/apache2.pid"
 # Global state
 apache_process = None
 server_state = {
@@ -38,31 +38,21 @@ def log_action(action, status="success", message=""):
     print(f"[{timestamp}] {action}: {status} - {message}", flush=True)
 
 
-def get_apache_pid():
-    """Get Apache PID from pidfile or ps"""
-    try:
-        # Try pidfile first
-        if os.path.exists("/var/run/apache2/apache2.pid"):
-            with open("/var/run/apache2/apache2.pid", "r") as f:
-                return int(f.read().strip())
-        
-        # Fallback to ps command
-        result = subprocess.run(
-            ["pgrep", "-f", "apache2"],
-            capture_output=True,
-            text=True
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            pids = result.stdout.strip().split('\n')
-            return int(pids[0]) if pids else None
-    except Exception as e:
-        print(f"Error getting Apache PID: {e}", flush=True)
-    return None
+def get_apache_pids():
+    """Return a list of active Apache PIDs (from pidfile or pgrep)."""
+    pids = []
 
+    # Try pidfile first
+    if os.path.exists(APACHE_PIDFILE):
+        try:
+            with open(APACHE_PIDFILE, "r") as f:
+                pid = int(f.read().strip())
+                if pid > 0:
+                    pids.append(pid)
+        except Exception as e:
+            print(f"[WARN] Could not read PID file: {e}", flush=True)
 
-def check_apache_status():
-    """Check if Apache is running"""
-    # Primary method: check for apache2 processes
+    # Fallback to pgrep
     try:
         result = subprocess.run(
             ["pgrep", "-x", "apache2"],
@@ -71,21 +61,37 @@ def check_apache_status():
             timeout=5
         )
         if result.returncode == 0 and result.stdout.strip():
-            return True
-    except Exception:
-        pass
-    
-    # Fallback: check PID file
-    pid = get_apache_pid()
-    if pid:
-        try:
-            os.kill(pid, 0)  # Check if process exists
-            return True
-        except OSError:
-            return False
-    
-    return False
+            for line in result.stdout.strip().splitlines():
+                try:
+                    pids.append(int(line))
+                except ValueError:
+                    pass
+    except Exception as e:
+        print(f"[WARN] Could not run pgrep: {e}", flush=True)
 
+    return sorted(set(pids))
+
+
+def check_apache_status():
+    """Return True if Apache is running, False otherwise."""
+    pids = get_apache_pids()
+    if not pids:
+        return False, None
+
+    # Verify processes actually exist and are not zombies
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/status") as f:
+                for line in f:
+                    if line.startswith("State:"):
+                        # Avoid counting zombies (Z)
+                        if "Z" in line:
+                            continue
+                        return True, pid
+        except FileNotFoundError:
+            continue  # Process may have exited
+
+    return False, None
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -100,9 +106,7 @@ def health():
 @app.route('/status', methods=['GET'])
 def status():
     """Get server status"""
-    is_running = check_apache_status()
-    pid = get_apache_pid() if is_running else None
-    
+    is_running, pid = check_apache_status()
     server_state["status"] = "running" if is_running else "stopped"
     server_state["pid"] = pid
     
@@ -119,12 +123,13 @@ def status():
 def start_server():
     """Start Apache server"""
     try:
-        if check_apache_status():
+        is_running, pid = check_apache_status()
+        if is_running:
             log_action("start_server", "info", "Apache already running")
             return jsonify({
                 "status": "already_running",
                 "message": "Apache is already running",
-                "pid": get_apache_pid()
+                "pid": pid
             }), 200
         
         # Start Apache
@@ -134,11 +139,12 @@ def start_server():
             text=True,
             timeout=10
         )
-        
+        time.sleep(1)
+         
         if result.returncode == 0:
-            time.sleep(1)  # Give Apache time to start
-            pid = get_apache_pid()
-            server_state["status"] = "running"
+            is_running, pid = check_apache_status()
+            pid = pid
+            server_state["status"] = "running" if is_running else "stopped"
             server_state["pid"] = pid
             log_action("start_server", "success", f"Apache started with PID {pid}")
             
@@ -146,6 +152,7 @@ def start_server():
                 "status": "success",
                 "message": "Apache started successfully",
                 "pid": pid,
+                "is_running": is_running,
                 "stdout": result.stdout,
                 "stderr": result.stderr
             }), 200
@@ -227,7 +234,7 @@ def restart():
         
         if result.returncode == 0:
             time.sleep(1)  # Give Apache time to restart
-            pid = get_apache_pid()
+            is_running, pid = check_apache_status()
             server_state["status"] = "running"
             server_state["pid"] = pid
             log_action("restart", "success", f"Apache restarted with PID {pid}")
@@ -269,8 +276,8 @@ def graceful_restart():
         
         if result.returncode == 0:
             time.sleep(1)  # Give Apache time to gracefully restart
-            pid = get_apache_pid()
-            server_state["status"] = "running"
+            is_running, pid = check_apache_status()
+            server_state["status"] = "running" if is_running else "stopped"
             server_state["pid"] = pid
             log_action("graceful-restart", "success", f"Apache gracefully restarted with PID {pid}")
             
