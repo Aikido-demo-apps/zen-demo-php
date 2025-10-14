@@ -24,4 +24,6 @@ Route::post('/api/execute', [ApiController::class, 'executeCommandPost']);
 Route::get('/api/execute/{command}', [ApiController::class, 'executeCommandGet']);
 Route::post('/api/request', [ApiController::class, 'makeRequest']);
 Route::post('/api/request2', [ApiController::class, 'makeRequest2']);
+Route::post('/api/request_different_port', [ApiController::class, 'makeRequestDifferentPort']);
 Route::get('/api/read', [ApiController::class, 'readFile']);
+Route::get('/api/read2', [ApiController::class, 'readFile2']);
