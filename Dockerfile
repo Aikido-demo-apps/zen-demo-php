@@ -2,7 +2,6 @@
 
 ARG PHP_VERSION=8.2
 ARG NODE_VERSION=18
-ARG PHP_FIREWALL_VERSION=1.0.123
 FROM ubuntu:22.04 as base
 LABEL fly_launch_runtime="laravel"
 
@@ -44,8 +43,6 @@ RUN apt-get update \
     && mkdir -p /var/www/html/public && echo "index" > /var/www/html/public/index.php \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/*
-ARG PHP_FIREWALL_VERSION
-ENV AIKIDO_VERSION=${PHP_FIREWALL_VERSION}
 
 # 2. Copy config files to proper locations
 COPY .fly/nginx/ /etc/nginx/
