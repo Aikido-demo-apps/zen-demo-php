@@ -483,6 +483,62 @@ def config_test():
             "message": str(e)
         }), 500
 
+#/install-aikido-version
+@app.route('/install-aikido-version', methods=['POST'])
+def install_aikido_version():
+    try:
+        data = request.get_json()
+        version = data.get('version')
+        
+        if not version:
+            return jsonify({'error': 'Version parameter is required'}), 400
+        
+        # Get architecture
+        arch_result = subprocess.run(['uname', '-i'], capture_output=True, text=True)
+        arch = arch_result.stdout.strip()
+        
+        # Construct filename with version prefix
+        filename = f"{version}-aikido-php-firewall.{arch}.deb"
+        filepath = f"/tmp/{filename}"
+        
+        # Download the package
+        download_url = f"https://github.com/AikidoSec/firewall-php/releases/download/v{version}/aikido-php-firewall.{arch}.deb"
+        
+        print(f"Downloading Aikido v{version} from {download_url}...", flush=True)
+        curl_result = subprocess.run(
+            ['curl', '-L', '-o', filepath, download_url],
+            capture_output=True,
+            text=True
+        )
+        
+        if curl_result.returncode != 0:
+            return jsonify({
+                'error': f'Failed to download package: {curl_result.stderr}'
+            }), 500
+        
+        # Install the package
+        print(f"Installing {filename}...", flush=True)
+        dpkg_result = subprocess.run(
+            ['dpkg', '-i', '-E', filepath],
+            capture_output=True,
+            text=True
+        )
+        
+        if dpkg_result.returncode != 0:
+            return jsonify({
+                'error': f'Failed to install package: {dpkg_result.stderr}',
+                'stdout': dpkg_result.stdout
+            }), 500
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Successfully installed Aikido v{version}',
+            'filename': filename,
+            'output': dpkg_result.stdout
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 def signal_handler(signum, frame):
     """Handle shutdown signals"""
