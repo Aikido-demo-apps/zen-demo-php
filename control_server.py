@@ -127,6 +127,7 @@ def start_server():
         if is_running:
             log_action("start_server", "info", "Apache already running")
             return jsonify({
+                "is_running": is_running,
                 "status": "already_running",
                 "message": "Apache is already running",
                 "pid": pid
@@ -177,9 +178,11 @@ def start_server():
 def stop_server():
     """Stop Apache server"""
     try:
-        if not check_apache_status():
+        is_running, pid = check_apache_status()
+        if not is_running:
             log_action("stop_server", "info", "Apache not running")
             return jsonify({
+                "is_running": is_running,
                 "status": "not_running",
                 "message": "Apache is not running"
             }), 200
@@ -194,11 +197,13 @@ def stop_server():
         
         if result.returncode == 0:
             time.sleep(1)  # Give Apache time to stop
-            server_state["status"] = "stopped"
+            is_running, pid = check_apache_status()
+            server_state["status"] = "running" if is_running else "stopped"
             server_state["pid"] = None
             log_action("stop_server", "success", "Apache stopped")
             
             return jsonify({
+                "is_running": is_running,
                 "status": "success",
                 "message": "Apache stopped successfully",
                 "stdout": result.stdout,
@@ -207,6 +212,7 @@ def stop_server():
         else:
             log_action("stop_server", "error", result.stderr)
             return jsonify({
+                "is_running": is_running,
                 "status": "error",
                 "message": "Failed to stop Apache",
                 "stdout": result.stdout,
