@@ -121,5 +121,6 @@ ENV AIKIDO_BLOCKING=true
 # 5. Setup Entrypoint
 EXPOSE 8080
 EXPOSE 8081
+RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
 ENTRYPOINT ["/entrypoint"]
