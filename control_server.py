@@ -406,6 +406,54 @@ def get_server_logs():
             "message": str(e)
         }), 500
 
+@app.route('/uninstall-aikido', methods=['POST'])
+def uninstall_aikido():
+    try:
+        subprocess.run(["dpkg", "--purge", "aikido-php-firewall"], capture_output=True, text=True, timeout=10)
+        result = subprocess.run(["php", "-m"], capture_output=True, text=True, timeout=10)
+        if result.returncode == 0 and "aikido" not in result.stdout.strip():
+            return jsonify({
+                "status": "success",
+                "message": "Aikido uninstalled successfully",
+            }), 200
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to uninstall Aikido",
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }), 500
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/install-aikido', methods=['POST'])
+def install_aikido():
+    #  .fly/scripts/aikido.sh
+    try:
+        subprocess.run(["./.fly/scripts/aikido.sh"], capture_output=True, text=True, timeout=10)
+        result = subprocess.run(["php", "-m"], capture_output=True, text=True, timeout=10)
+        if result.returncode == 0 and "aikido" in result.stdout.strip():
+            return jsonify({
+                "status": "success",
+                "message": "Aikido installed successfully",
+            }), 200
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to install Aikido",
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }), 500
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
 
 @app.route('/config-test', methods=['GET'])
 def config_test():
@@ -457,15 +505,6 @@ if __name__ == '__main__':
     print("Apache Control Server Starting", flush=True)
     print("=" * 60, flush=True)
     print(f"Listening on port 8081", flush=True)
-    print(f"Available endpoints:", flush=True)
-    print(f"  - GET  /health           - Health check", flush=True)
-    print(f"  - GET  /status           - Get Apache status", flush=True)
-    print(f"  - POST /start_server     - Start Apache", flush=True)
-    print(f"  - POST /stop_server      - Stop Apache", flush=True)
-    print(f"  - POST /restart          - Hard restart Apache", flush=True)
-    print(f"  - POST /graceful-restart - Graceful restart Apache", flush=True)
-    print(f"  - GET  /get-server-logs  - Get Apache logs (params: type=error|access|all, lines=100)", flush=True)
-    print(f"  - GET  /config-test      - Test Apache config", flush=True)
     print("=" * 60, flush=True)
     
     # Start Flask server
