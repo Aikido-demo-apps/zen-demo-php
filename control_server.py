@@ -196,16 +196,17 @@ def stop_server():
         )
         
         if result.returncode == 0:
-            time.sleep(1)  # Give Apache time to stop
+            time.sleep(3)  # Give Apache time to stop
             is_running, pid = check_apache_status()
             server_state["status"] = "running" if is_running else "stopped"
-            server_state["pid"] = None
+            server_state["pid"] = pid
             log_action("stop_server", "success", "Apache stopped")
             
             return jsonify({
                 "is_running": is_running,
                 "status": "success",
                 "message": "Apache stopped successfully",
+                "pid": pid,
                 "stdout": result.stdout,
                 "stderr": result.stderr
             }), 200
