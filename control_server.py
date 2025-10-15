@@ -246,6 +246,7 @@ def restart():
             log_action("restart", "success", f"Apache restarted with PID {pid}")
             
             return jsonify({
+                "is_running": is_running,
                 "status": "success",
                 "message": "Apache restarted successfully",
                 "pid": pid,
@@ -255,6 +256,7 @@ def restart():
         else:
             log_action("restart", "error", result.stderr)
             return jsonify({
+                "is_running": is_running,
                 "status": "error",
                 "message": "Failed to restart Apache",
                 "stdout": result.stdout,
@@ -311,6 +313,48 @@ def graceful_restart():
             "message": str(e)
         }), 500
 
+@app.route('/graceful-stop', methods=['POST'])
+def graceful_stop():
+    """Gracefully stop Apache server"""
+    try:
+        result = subprocess.run(
+            ["apachectl", "-k", "graceful-stop"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            time.sleep(1)  # Give Apache time to gracefully stop
+            is_running, pid = check_apache_status()
+            server_state["status"] = "running" if is_running else "stopped"
+            server_state["pid"] = pid
+            log_action("graceful-stop", "success", f"Apache gracefully stopped with PID {pid}")
+            
+            return jsonify({
+                "is_running": is_running,
+                "status": "success",
+                "message": "Apache gracefully stopped successfully",
+                "pid": pid,
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }), 200
+        else:
+            log_action("graceful-stop", "error", result.stderr)
+            return jsonify({
+                "is_running": is_running,
+                "status": "error",
+                "message": "Failed to gracefully stop Apache",
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }), 500
+            
+    except Exception as e:
+        log_action("graceful-stop", "error", str(e))
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 @app.route('/get-server-logs', methods=['GET'])
 def get_server_logs():
