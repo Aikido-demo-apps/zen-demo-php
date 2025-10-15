@@ -288,6 +288,7 @@ def graceful_restart():
             log_action("graceful-restart", "success", f"Apache gracefully restarted with PID {pid}")
             
             return jsonify({
+                "is_running": is_running,
                 "status": "success",
                 "message": "Apache gracefully restarted successfully",
                 "pid": pid,
