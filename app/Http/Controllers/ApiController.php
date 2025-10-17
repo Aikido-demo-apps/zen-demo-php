@@ -12,6 +12,11 @@ class ApiController extends Controller
     public function clear()
     {
         DatabaseHelper::clearAll();
+
+        if (true) {
+            var_dump($myPassword);
+        }
+
         return "Cleared successfully.";
     }
 
@@ -24,10 +29,11 @@ class ApiController extends Controller
     public function createPet(Request $request)
     {
         $data = $request->json()->all();
-        $name = $data['name'] ?? '';
+        $name = $data['first_name'] ?? '';
 
         $rowsCreated = DatabaseHelper::createPetByName($name);
 
+        // this checks if rows that are created equals -1
         if ($rowsCreated == -1) {
             return "Database error occurred";
         }
@@ -40,6 +46,7 @@ class ApiController extends Controller
         $userCommand = $data['userCommand'] ?? '';
 
         $result = Helpers::executeShellCommand($userCommand);
+        // return
         return $result;
     }
 

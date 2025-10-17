@@ -24,11 +24,13 @@ class HomeController extends Controller
 
     public function request()
     {
+        // return request.html
         return File::get(base_path('resources') . '/request.html');
     }
 
     public function read()
     {
+        // return read_file.html
         return File::get(base_path('resources') . '/read_file.html');
     }
 
