@@ -434,7 +434,7 @@ def uninstall_aikido():
 def install_aikido():
     #  .fly/scripts/aikido.sh
     try:
-        subprocess.run(["/var/www/html/.fly/scripts/aikido.sh"], capture_output=True, text=True, timeout=10)
+        subprocess.run(["./.fly/scripts/aikido.sh"], capture_output=True, text=True, timeout=10)
         result = subprocess.run(["php", "-m"], capture_output=True, text=True, timeout=10)
         if result.returncode == 0 and "aikido" in result.stdout.strip():
             return jsonify({
