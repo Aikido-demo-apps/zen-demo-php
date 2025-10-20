@@ -1,5 +1,3 @@
-# syntax = docker/dockerfile:experimental
-
 ARG PHP_VERSION=8.2
 ARG NODE_VERSION=18
 FROM ubuntu:22.04 as base
@@ -122,5 +120,6 @@ ENV AIKIDO_BLOCKING=true
 EXPOSE 8080
 EXPOSE 8081
 RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
-
+ENV AIKIDO_DISK_LOGS=true
+ENV AIKIDO_DEBUG=true
 ENTRYPOINT ["/entrypoint"]
