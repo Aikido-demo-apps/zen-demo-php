@@ -541,6 +541,28 @@ def install_aikido_version():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/kill-aikido-agent', methods=['POST'])
+def kill_aikido_agent():
+    try:
+        subprocess.run(["pkill", "-f", "aikido-agent"], capture_output=True, text=True, timeout=10)
+        time.sleep(1)
+        # search for aikido-agent in the process list to see if it is still running
+        result = subprocess.run(["ps", "-ef"], capture_output=True, text=True, timeout=10)
+        # remove zombies from the process list
+        result.stdout = [line for line in result.stdout.splitlines() if "Z" not in line]
+        if "aikido-agent" in result.stdout:
+            return jsonify({
+                "status": "error",
+                "message": "Aikido agent still running",
+            }), 500
+        else:
+            return jsonify({
+                "status": "success",
+                "message": "Aikido agent killed successfully",
+            }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 def signal_handler(signum, frame):
     """Handle shutdown signals"""
     print(f"\nReceived signal {signum}, shutting down gracefully...", flush=True)
