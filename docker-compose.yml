@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: zen-demo-php-apache
+    container_name: zen-demo-php-apache-fpm
     ports:
       - "8080:8080"  # Apache web server
       - "8081:8081"  # Python control server
@@ -24,6 +24,7 @@ services:
       - AIKIDO_DEBUG=true
       - DATABASE_URL=postgresql://myuser:mysecretpassword@postgres:5432/mydb?sslmode=disable
       - AIKIDO_DISK_LOGS=true
+      - AIKIDO_TOKEN=aaa33331111
     restart: unless-stopped
     networks:
       - app-network

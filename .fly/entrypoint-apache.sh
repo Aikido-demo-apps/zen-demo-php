@@ -3,7 +3,7 @@
 set -e
 
 echo "=========================================="
-echo "Starting Laravel Application with Apache"
+echo "Starting Laravel Application with Apache + PHP-FPM"
 echo "=========================================="
 
 # Run user scripts, if they exist (includes migrations.sh)
@@ -31,10 +31,21 @@ chown -R www-data:www-data /var/www/html
 chown -R www-data:www-data /var/www/html/storage
 chown -R www-data:www-data /var/www/html/bootstrap/cache
 
-# Ensure Apache log directory exists
+# Ensure Apache and PHP-FPM log directories exist
 mkdir -p /var/log/apache2
+mkdir -p /var/run/php
 chown -R www-data:www-data /var/log/apache2
+chown -R www-data:www-data /var/run/php
 
+# Replace environment variable placeholders in PHP-FPM pool config
+echo "Configuring PHP-FPM environment variables..."
+sed -i "s|__AIKIDO_BLOCKING__|${AIKIDO_BLOCKING:-false}|g" /etc/php/8.2/fpm/pool.d/www.conf
+sed -i "s|__AIKIDO_BLOCK__|${AIKIDO_BLOCK:-false}|g" /etc/php/8.2/fpm/pool.d/www.conf
+sed -i "s|__AIKIDO_DISK_LOGS__|${AIKIDO_DISK_LOGS:-false}|g" /etc/php/8.2/fpm/pool.d/www.conf
+sed -i "s|__AIKIDO_DEBUG__|${AIKIDO_DEBUG:-false}|g" /etc/php/8.2/fpm/pool.d/www.conf
+sed -i "s|__AIKIDO_TOKEN__|${AIKIDO_TOKEN:-}|g" /etc/php/8.2/fpm/pool.d/www.conf
+sed -i "s|__AIKIDO_ENDPOINT__|${AIKIDO_ENDPOINT:-https://guard.aikido.dev/}|g" /etc/php/8.2/fpm/pool.d/www.conf
+sed -i "s|__AIKIDO_REALTIME_ENDPOINT__|${AIKIDO_REALTIME_ENDPOINT:-https://runtime.aikido.dev/}|g" /etc/php/8.2/fpm/pool.d/www.conf
 # Start cron if needed
 echo "Starting cron..."
 service cron start
@@ -46,7 +57,7 @@ if [ $# -gt 0 ]; then
 else
     # Start the Python control server (main process)
     echo "Starting Python Control Server on port 8081..."
-    echo "Apache will be controlled via HTTP API"
+    echo "Apache and PHP-FPM will be controlled via HTTP API"
     echo "=========================================="
     exec python3 /var/www/html/control_server.py
 fi

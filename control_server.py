@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Control Server for Apache + mod_php
-Manages the Apache web server running the PHP demo app
+Control Server for Apache + PHP-FPM
+Manages the Apache web server and PHP-FPM process for the PHP demo app
 """
 import os
 import subprocess
@@ -20,13 +20,19 @@ APACHE_LOG_ERROR = "/var/log/apache2/error.log"
 APACHE_LOG_ACCESS = "/var/log/apache2/access.log"
 APACHE_LOG_OTHER = "/var/log/apache2/other_vhosts_access.log"
 APACHE_PIDFILE = "/var/run/apache2/apache2.pid"
+PHP_FPM_PIDFILE = "/run/php/php8.2-fpm.sock"
+PHP_FPM_LOG = "/var/log/php8.2-fpm.log"
+
 # Global state
 apache_process = None
+fpm_process = None
 server_state = {
-    "status": "stopped",
+    "apache_status": "stopped",
+    "fpm_status": "stopped",
     "last_action": None,
     "last_action_time": None,
-    "pid": None
+    "apache_pid": None,
+    "fpm_pid": None
 }
 
 
@@ -93,12 +99,74 @@ def check_apache_status():
 
     return False, None
 
+
+def get_fpm_pids():
+    """Return a list of active PHP-FPM PIDs."""
+    pids = []
+
+    # Try pidfile first
+    if os.path.exists(PHP_FPM_PIDFILE):
+        try:
+            with open(PHP_FPM_PIDFILE, "r") as f:
+                pid = int(f.read().strip())
+                if pid > 0:
+                    pids.append(pid)
+        except Exception as e:
+            print(f"[WARN] Could not read PHP-FPM PID file: {e}", flush=True)
+
+    # Fallback to pgrep
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "php-fpm: master"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            for line in result.stdout.strip().splitlines():
+                try:
+                    pids.append(int(line))
+                except ValueError:
+                    pass
+    except Exception as e:
+        print(f"[WARN] Could not run pgrep for PHP-FPM: {e}", flush=True)
+
+    return sorted(set(pids))
+
+
+def check_fpm_status():
+    """Return True if PHP-FPM is running, False otherwise."""
+    pids = get_fpm_pids()
+    if not pids:
+        return False, None
+
+    # Verify processes actually exist and are not zombies
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/status") as f:
+                for line in f:
+                    if line.startswith("State:"):
+                        # Avoid counting zombies (Z)
+                        if "Z" in line:
+                            continue
+                        return True, pid
+        except FileNotFoundError:
+            continue  # Process may have exited
+
+    return False, None
+
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
+    apache_running, _ = check_apache_status()
+    fpm_running, _ = check_fpm_status()
+    
     return jsonify({
         "status": "healthy",
-        "service": "apache-control-server",
+        "service": "apache-fpm-control-server",
+        "apache_running": apache_running,
+        "fpm_running": fpm_running,
         "timestamp": datetime.now().isoformat()
     })
 
@@ -106,13 +174,19 @@ def health():
 @app.route('/status', methods=['GET'])
 def status():
     """Get server status"""
-    is_running, pid = check_apache_status()
-    server_state["status"] = "running" if is_running else "stopped"
-    server_state["pid"] = pid
+    is_running, apache_pid = check_apache_status()
+    fpm_running, fpm_pid = check_fpm_status()
+    
+    server_state["apache_status"] = "running" if is_running else "stopped"
+    server_state["fpm_status"] = "running" if fpm_running else "stopped"
+    server_state["apache_pid"] = apache_pid
+    server_state["fpm_pid"] = fpm_pid
     
     return jsonify({
-        "apache_status": server_state["status"],
-        "apache_pid": pid,
+        "apache_status": server_state["apache_status"],
+        "apache_pid": apache_pid,
+        "fpm_status": server_state["fpm_status"],
+        "fpm_pid": fpm_pid,
         "last_action": server_state["last_action"],
         "last_action_time": server_state["last_action_time"],
         "timestamp": datetime.now().isoformat()
@@ -121,50 +195,67 @@ def status():
 
 @app.route('/start_server', methods=['POST'])
 def start_server():
-    """Start Apache server"""
+    """Start Apache and PHP-FPM"""
     try:
-        is_running, pid = check_apache_status()
-        if is_running:
-            log_action("start_server", "info", "Apache already running")
-            return jsonify({
-                "is_running": is_running,
-                "status": "already_running",
-                "message": "Apache is already running",
-                "pid": pid
-            }), 200
+        apache_running, apache_pid = check_apache_status()
+        fpm_running, fpm_pid = check_fpm_status()
+        
+        results = {"apache": {}, "fpm": {}}
+        
+        # Start PHP-FPM first
+        if not fpm_running:
+            fpm_result = subprocess.run(
+                ["service", "php8.2-fpm", "start"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            time.sleep(1)
+            fpm_running, fpm_pid = check_fpm_status()
+            results["fpm"] = {
+                "status": "success" if fpm_running else "error",
+                "pid": fpm_pid,
+                "stdout": fpm_result.stdout,
+                "stderr": fpm_result.stderr
+            }
+        else:
+            results["fpm"] = {"status": "already_running", "pid": fpm_pid}
         
         # Start Apache
-        result = subprocess.run(
-            ["apachectl", "-k", "start"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        time.sleep(1)
-         
-        if result.returncode == 0:
-            is_running, pid = check_apache_status()
-            pid = pid
-            server_state["status"] = "running" if is_running else "stopped"
-            server_state["pid"] = pid
-            log_action("start_server", "success", f"Apache started with PID {pid}")
-            
-            return jsonify({
-                "status": "success",
-                "message": "Apache started successfully",
-                "pid": pid,
-                "is_running": is_running,
-                "stdout": result.stdout,
-                "stderr": result.stderr
-            }), 200
+        if not apache_running:
+            apache_result = subprocess.run(
+                ["apachectl", "-k", "start"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            time.sleep(1)
+            apache_running, apache_pid = check_apache_status()
+            results["apache"] = {
+                "status": "success" if apache_running else "error",
+                "pid": apache_pid,
+                "stdout": apache_result.stdout,
+                "stderr": apache_result.stderr
+            }
         else:
-            log_action("start_server", "error", result.stderr)
-            return jsonify({
-                "status": "error",
-                "message": "Failed to start Apache",
-                "stdout": result.stdout,
-                "stderr": result.stderr
-            }), 500
+            results["apache"] = {"status": "already_running", "pid": apache_pid}
+        
+        server_state["apache_status"] = "running" if apache_running else "stopped"
+        server_state["fpm_status"] = "running" if fpm_running else "stopped"
+        server_state["apache_pid"] = apache_pid
+        server_state["fpm_pid"] = fpm_pid
+        
+        overall_status = "success" if (apache_running and fpm_running) else "partial"
+        log_action("start_server", overall_status, f"Apache: {apache_running}, FPM: {fpm_running}")
+        
+        return jsonify({
+            "status": overall_status,
+            "message": f"Apache: {'running' if apache_running else 'stopped'}, FPM: {'running' if fpm_running else 'stopped'}",
+            "apache_running": apache_running,
+            "fpm_running": fpm_running,
+            "results": results,
+            "is_running": fpm_running and apache_running
+        }), 200
             
     except Exception as e:
         log_action("start_server", "error", str(e))
@@ -176,49 +267,67 @@ def start_server():
 
 @app.route('/stop_server', methods=['POST'])
 def stop_server():
-    """Stop Apache server"""
+    """Stop Apache and PHP-FPM"""
     try:
-        is_running, pid = check_apache_status()
-        if not is_running:
-            log_action("stop_server", "info", "Apache not running")
-            return jsonify({
-                "is_running": is_running,
-                "status": "not_running",
-                "message": "Apache is not running"
-            }), 200
+        apache_running, apache_pid = check_apache_status()
+        fpm_running, fpm_pid = check_fpm_status()
         
-        # Stop Apache
-        result = subprocess.run(
-            ["apachectl", "-k", "stop"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
+        results = {"apache": {}, "fpm": {}}
         
-        if result.returncode == 0:
-            time.sleep(3)  # Give Apache time to stop
-            is_running, pid = check_apache_status()
-            server_state["status"] = "running" if is_running else "stopped"
-            server_state["pid"] = pid
-            log_action("stop_server", "success", "Apache stopped")
-            
-            return jsonify({
-                "is_running": is_running,
-                "status": "success",
-                "message": "Apache stopped successfully",
-                "pid": pid,
-                "stdout": result.stdout,
-                "stderr": result.stderr
-            }), 200
+        # Stop Apache first
+        if apache_running:
+            apache_result = subprocess.run(
+                ["apachectl", "-k", "stop"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            time.sleep(2)
+            apache_running, apache_pid = check_apache_status()
+            results["apache"] = {
+                "status": "success" if not apache_running else "error",
+                "pid": apache_pid,
+                "stdout": apache_result.stdout,
+                "stderr": apache_result.stderr
+            }
         else:
-            log_action("stop_server", "error", result.stderr)
-            return jsonify({
-                "is_running": is_running,
-                "status": "error",
-                "message": "Failed to stop Apache",
-                "stdout": result.stdout,
-                "stderr": result.stderr
-            }), 500
+            results["apache"] = {"status": "not_running"}
+        
+        # Stop PHP-FPM
+        if fpm_running:
+            fpm_result = subprocess.run(
+                ["service", "php8.2-fpm", "stop"],
+                capture_output=True,
+                text=True,
+                timeout=50
+            )
+            time.sleep(2)
+            fpm_running, fpm_pid = check_fpm_status()
+            results["fpm"] = {
+                "status": "success" if not fpm_running else "error",
+                "pid": fpm_pid,
+                "stdout": fpm_result.stdout,
+                "stderr": fpm_result.stderr
+            }
+        else:
+            results["fpm"] = {"status": "not_running"}
+        
+        server_state["apache_status"] = "running" if apache_running else "stopped"
+        server_state["fpm_status"] = "running" if fpm_running else "stopped"
+        server_state["apache_pid"] = apache_pid
+        server_state["fpm_pid"] = fpm_pid
+        
+        overall_status = "success" if (not apache_running and not fpm_running) else "partial"
+        log_action("stop_server", overall_status, f"Apache: {not apache_running}, FPM: {not fpm_running}")
+        
+        return jsonify({
+            "status": overall_status,
+            "message": f"Apache: {'stopped' if not apache_running else 'running'}, FPM: {'stopped' if not fpm_running else 'running'}",
+            "apache_running": apache_running,
+            "fpm_running": fpm_running,
+            "results": results,
+            "is_running": fpm_running or apache_running
+        }), 200
             
     except Exception as e:
         log_action("stop_server", "error", str(e))
@@ -230,39 +339,58 @@ def stop_server():
 
 @app.route('/restart', methods=['POST'])
 def restart():
-    """Restart Apache server (hard restart)"""
+    """Restart Apache and PHP-FPM (hard restart)"""
     try:
-        result = subprocess.run(
+        results = {"apache": {}, "fpm": {}}
+        
+        # Restart PHP-FPM
+        fpm_result = subprocess.run(
+            ["service", "php8.2-fpm", "restart"],
+            capture_output=True,
+            text=True,
+            timeout=50
+        )
+        time.sleep(1)
+        fpm_running, fpm_pid = check_fpm_status()
+        results["fpm"] = {
+            "status": "success" if fpm_running else "error",
+            "pid": fpm_pid,
+            "stdout": fpm_result.stdout,
+            "stderr": fpm_result.stderr
+        }
+        
+        # Restart Apache
+        apache_result = subprocess.run(
             ["apachectl", "-k", "restart"],
             capture_output=True,
             text=True,
             timeout=10
         )
+        time.sleep(1)
+        apache_running, apache_pid = check_apache_status()
+        results["apache"] = {
+            "status": "success" if apache_running else "error",
+            "pid": apache_pid,
+            "stdout": apache_result.stdout,
+            "stderr": apache_result.stderr
+        }
         
-        if result.returncode == 0:
-            time.sleep(1)  # Give Apache time to restart
-            is_running, pid = check_apache_status()
-            server_state["status"] = "running"
-            server_state["pid"] = pid
-            log_action("restart", "success", f"Apache restarted with PID {pid}")
-            
-            return jsonify({
-                "is_running": is_running,
-                "status": "success",
-                "message": "Apache restarted successfully",
-                "pid": pid,
-                "stdout": result.stdout,
-                "stderr": result.stderr
-            }), 200
-        else:
-            log_action("restart", "error", result.stderr)
-            return jsonify({
-                "is_running": is_running,
-                "status": "error",
-                "message": "Failed to restart Apache",
-                "stdout": result.stdout,
-                "stderr": result.stderr
-            }), 500
+        server_state["apache_status"] = "running" if apache_running else "stopped"
+        server_state["fpm_status"] = "running" if fpm_running else "stopped"
+        server_state["apache_pid"] = apache_pid
+        server_state["fpm_pid"] = fpm_pid
+        
+        overall_status = "success" if (apache_running and fpm_running) else "partial"
+        log_action("restart", overall_status, f"Apache PID: {apache_pid}, FPM PID: {fpm_pid}")
+        
+        return jsonify({
+            "status": overall_status,
+            "message": f"Apache: {'running' if apache_running else 'stopped'}, FPM: {'running' if fpm_running else 'stopped'}",
+            "apache_running": apache_running,
+            "fpm_running": fpm_running,
+            "results": results,
+            "is_running": fpm_running and apache_running
+        }), 200
             
     except Exception as e:
         log_action("restart", "error", str(e))
@@ -274,38 +402,69 @@ def restart():
 
 @app.route('/graceful-restart', methods=['POST'])
 def graceful_restart():
-    """Gracefully restart Apache server"""
+    """Gracefully restart Apache and PHP-FPM"""
     try:
-        result = subprocess.run(
+        results = {"apache": {}, "fpm": {}}
+        fpm_running, fpm_pid = check_fpm_status()
+        if not fpm_running:
+            # start php-fpm
+            fpm_result = subprocess.run(
+                ["service", "php8.2-fpm", "start"],
+                capture_output=True,
+                text=True,
+                timeout=50
+            )
+            
+        else:
+            # Gracefully reload PHP-FPM
+            fpm_result = subprocess.run(
+                ["service", "php8.2-fpm", "reload"],
+                capture_output=True,
+                text=True,
+                timeout=50
+            )
+
+        time.sleep(1)
+        fpm_running, fpm_pid = check_fpm_status()
+        results["fpm"] = {
+            "status": "success" if fpm_running else "error",
+            "pid": fpm_pid,
+            "stdout": fpm_result.stdout,
+            "stderr": fpm_result.stderr
+        }
+        
+        # Gracefully restart Apache
+        apache_result = subprocess.run(
             ["apachectl", "-k", "graceful"],
             capture_output=True,
             text=True,
             timeout=10
         )
+        time.sleep(1)
+        apache_running, apache_pid = check_apache_status()
+        results["apache"] = {
+            "status": "success" if apache_running else "error",
+            "pid": apache_pid,
+            "stdout": apache_result.stdout,
+            "stderr": apache_result.stderr
+        }
         
-        if result.returncode == 0:
-            time.sleep(1)  # Give Apache time to gracefully restart
-            is_running, pid = check_apache_status()
-            server_state["status"] = "running" if is_running else "stopped"
-            server_state["pid"] = pid
-            log_action("graceful-restart", "success", f"Apache gracefully restarted with PID {pid}")
-            
-            return jsonify({
-                "is_running": is_running,
-                "status": "success",
-                "message": "Apache gracefully restarted successfully",
-                "pid": pid,
-                "stdout": result.stdout,
-                "stderr": result.stderr
-            }), 200
-        else:
-            log_action("graceful-restart", "error", result.stderr)
-            return jsonify({
-                "status": "error",
-                "message": "Failed to gracefully restart Apache",
-                "stdout": result.stdout,
-                "stderr": result.stderr
-            }), 500
+        server_state["apache_status"] = "running" if apache_running else "stopped"
+        server_state["fpm_status"] = "running" if fpm_running else "stopped"
+        server_state["apache_pid"] = apache_pid
+        server_state["fpm_pid"] = fpm_pid
+        
+        overall_status = "success" if (apache_running and fpm_running) else "partial"
+        log_action("graceful-restart", overall_status, f"Apache PID: {apache_pid}, FPM PID: {fpm_pid}")
+        
+        return jsonify({
+            "status": overall_status,
+            "message": f"Apache: {'running' if apache_running else 'stopped'}, FPM: {'running' if fpm_running else 'stopped'}",
+            "apache_running": apache_running,
+            "fpm_running": fpm_running,
+            "results": results,
+            "is_running": fpm_running and apache_running
+        }), 200
             
     except Exception as e:
         log_action("graceful-restart", "error", str(e))
@@ -316,39 +475,57 @@ def graceful_restart():
 
 @app.route('/graceful-stop', methods=['POST'])
 def graceful_stop():
-    """Gracefully stop Apache server"""
+    """Gracefully stop Apache and PHP-FPM"""
     try:
-        result = subprocess.run(
+        results = {"apache": {}, "fpm": {}}
+        
+        # Gracefully stop Apache
+        apache_result = subprocess.run(
             ["apachectl", "-k", "graceful-stop"],
             capture_output=True,
             text=True,
             timeout=10
         )
+        time.sleep(2)
+        apache_running, apache_pid = check_apache_status()
+        results["apache"] = {
+            "status": "success" if not apache_running else "error",
+            "pid": apache_pid,
+            "stdout": apache_result.stdout,
+            "stderr": apache_result.stderr
+        }
         
-        if result.returncode == 0:
-            time.sleep(1)  # Give Apache time to gracefully stop
-            is_running, pid = check_apache_status()
-            server_state["status"] = "running" if is_running else "stopped"
-            server_state["pid"] = pid
-            log_action("graceful-stop", "success", f"Apache gracefully stopped with PID {pid}")
-            
-            return jsonify({
-                "is_running": is_running,
-                "status": "success",
-                "message": "Apache gracefully stopped successfully",
-                "pid": pid,
-                "stdout": result.stdout,
-                "stderr": result.stderr
-            }), 200
-        else:
-            log_action("graceful-stop", "error", result.stderr)
-            return jsonify({
-                "is_running": is_running,
-                "status": "error",
-                "message": "Failed to gracefully stop Apache",
-                "stdout": result.stdout,
-                "stderr": result.stderr
-            }), 500
+        # Stop PHP-FPM
+        fpm_result = subprocess.run(
+            ["service", "php8.2-fpm", "stop"],
+            capture_output=True,
+            text=True,
+            timeout=50
+        )
+        time.sleep(2)
+        fpm_running, fpm_pid = check_fpm_status()
+        results["fpm"] = {
+            "status": "success" if not fpm_running else "error",
+            "pid": fpm_pid,
+            "stdout": fpm_result.stdout,
+            "stderr": fpm_result.stderr
+        }
+        
+        server_state["apache_status"] = "running" if apache_running else "stopped"
+        server_state["fpm_status"] = "running" if fpm_running else "stopped"
+        server_state["apache_pid"] = apache_pid
+        server_state["fpm_pid"] = fpm_pid
+        
+        overall_status = "success" if (not apache_running and not fpm_running) else "partial"
+        log_action("graceful-stop", overall_status, f"Apache: {not apache_running}, FPM: {not fpm_running}")
+        
+        return jsonify({
+            "status": overall_status,
+            "message": f"Apache: {'stopped' if not apache_running else 'running'}, FPM: {'stopped' if not fpm_running else 'running'}",
+            "apache_running": apache_running,
+            "fpm_running": fpm_running,
+            "results": results
+        }), 200
             
     except Exception as e:
         log_action("graceful-stop", "error", str(e))
@@ -568,9 +745,16 @@ def signal_handler(signum, frame):
     print(f"\nReceived signal {signum}, shutting down gracefully...", flush=True)
     
     # Stop Apache if running
-    if check_apache_status():
+    apache_running, _ = check_apache_status()
+    if apache_running:
         print("Stopping Apache...", flush=True)
         subprocess.run(["apachectl", "-k", "stop"], timeout=10)
+    
+    # Stop PHP-FPM if running
+    fpm_running, _ = check_fpm_status()
+    if fpm_running:
+        print("Stopping PHP-FPM...", flush=True)
+        subprocess.run(["service", "php8.2-fpm", "stop"], timeout=50)
     
     sys.exit(0)
 
@@ -581,7 +765,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGTERM, signal_handler)
     
     print("=" * 60, flush=True)
-    print("Apache Control Server Starting", flush=True)
+    print("Apache + PHP-FPM Control Server Starting", flush=True)
     print("=" * 60, flush=True)
     print(f"Listening on port 8081", flush=True)
     print("=" * 60, flush=True)
