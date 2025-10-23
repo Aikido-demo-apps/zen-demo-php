@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Control Server for Apache + PHP-FPM
-Manages the Apache web server and PHP-FPM process for the PHP demo app
+Control Server for Nginx + PHP-FPM
+Manages the Nginx web server and PHP-FPM process for the PHP demo app
 """
 import os
 import subprocess
@@ -16,22 +16,21 @@ import time
 app = Flask(__name__)
 
 # Configuration
-APACHE_LOG_ERROR = "/var/log/apache2/error.log"
-APACHE_LOG_ACCESS = "/var/log/apache2/access.log"
-APACHE_LOG_OTHER = "/var/log/apache2/other_vhosts_access.log"
-APACHE_PIDFILE = "/var/run/apache2/apache2.pid"
-PHP_FPM_PIDFILE = "/run/php/php8.2-fpm.sock"
+NGINX_LOG_ERROR = "/var/log/nginx/error.log"
+NGINX_LOG_ACCESS = "/var/log/nginx/access.log"
+NGINX_PIDFILE = "/run/nginx.pid"
+PHP_FPM_PIDFILE = "/run/php/php8.2-fpm.pid"
 PHP_FPM_LOG = "/var/log/php8.2-fpm.log"
 
 # Global state
-apache_process = None
+nginx_process = None
 fpm_process = None
 server_state = {
-    "apache_status": "stopped",
+    "nginx_status": "stopped",
     "fpm_status": "stopped",
     "last_action": None,
     "last_action_time": None,
-    "apache_pid": None,
+    "nginx_pid": None,
     "fpm_pid": None
 }
 
@@ -44,14 +43,14 @@ def log_action(action, status="success", message=""):
     print(f"[{timestamp}] {action}: {status} - {message}", flush=True)
 
 
-def get_apache_pids():
-    """Return a list of active Apache PIDs (from pidfile or pgrep)."""
+def get_nginx_pids():
+    """Return a list of active Nginx PIDs (from pidfile or pgrep)."""
     pids = []
 
     # Try pidfile first
-    if os.path.exists(APACHE_PIDFILE):
+    if os.path.exists(NGINX_PIDFILE):
         try:
-            with open(APACHE_PIDFILE, "r") as f:
+            with open(NGINX_PIDFILE, "r") as f:
                 pid = int(f.read().strip())
                 if pid > 0:
                     pids.append(pid)
@@ -61,7 +60,7 @@ def get_apache_pids():
     # Fallback to pgrep
     try:
         result = subprocess.run(
-            ["pgrep", "-x", "apache2"],
+            ["pgrep", "-x", "nginx"],
             capture_output=True,
             text=True,
             timeout=5
@@ -78,9 +77,9 @@ def get_apache_pids():
     return sorted(set(pids))
 
 
-def check_apache_status():
-    """Return True if Apache is running, False otherwise."""
-    pids = get_apache_pids()
+def check_nginx_status():
+    """Return True if Nginx is running, False otherwise."""
+    pids = get_nginx_pids()
     if not pids:
         return False, None
 
@@ -159,13 +158,13 @@ def check_fpm_status():
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
-    apache_running, _ = check_apache_status()
+    nginx_running, _ = check_nginx_status()
     fpm_running, _ = check_fpm_status()
     
     return jsonify({
         "status": "healthy",
-        "service": "apache-fpm-control-server",
-        "apache_running": apache_running,
+        "service": "nginx-fpm-control-server",
+        "nginx_running": nginx_running,
         "fpm_running": fpm_running,
         "timestamp": datetime.now().isoformat()
     })
@@ -174,17 +173,17 @@ def health():
 @app.route('/status', methods=['GET'])
 def status():
     """Get server status"""
-    is_running, apache_pid = check_apache_status()
+    is_running, nginx_pid = check_nginx_status()
     fpm_running, fpm_pid = check_fpm_status()
     
-    server_state["apache_status"] = "running" if is_running else "stopped"
+    server_state["nginx_status"] = "running" if is_running else "stopped"
     server_state["fpm_status"] = "running" if fpm_running else "stopped"
-    server_state["apache_pid"] = apache_pid
+    server_state["nginx_pid"] = nginx_pid
     server_state["fpm_pid"] = fpm_pid
     
     return jsonify({
-        "apache_status": server_state["apache_status"],
-        "apache_pid": apache_pid,
+        "nginx_status": server_state["nginx_status"],
+        "nginx_pid": nginx_pid,
         "fpm_status": server_state["fpm_status"],
         "fpm_pid": fpm_pid,
         "last_action": server_state["last_action"],
@@ -195,12 +194,12 @@ def status():
 
 @app.route('/start_server', methods=['POST'])
 def start_server():
-    """Start Apache and PHP-FPM"""
+    """Start Nginx and PHP-FPM"""
     try:
-        apache_running, apache_pid = check_apache_status()
+        nginx_running, nginx_pid = check_nginx_status()
         fpm_running, fpm_pid = check_fpm_status()
         
-        results = {"apache": {}, "fpm": {}}
+        results = {"nginx": {}, "fpm": {}}
         
         # Start PHP-FPM first
         if not fpm_running:
@@ -221,40 +220,44 @@ def start_server():
         else:
             results["fpm"] = {"status": "already_running", "pid": fpm_pid}
         
-        # Start Apache
-        if not apache_running:
-            apache_result = subprocess.run(
-                ["apachectl", "-k", "start"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
+        # Start Nginx
+        if not nginx_running:
+            try:
+                nginx_result = subprocess.run(
+                    ["service", "nginx", "start"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+            except subprocess.TimeoutExpired:
+                # Service command might hang, but check if nginx actually started
+                pass
             time.sleep(1)
-            apache_running, apache_pid = check_apache_status()
-            results["apache"] = {
-                "status": "success" if apache_running else "error",
-                "pid": apache_pid,
-                "stdout": apache_result.stdout,
-                "stderr": apache_result.stderr
+            nginx_running, nginx_pid = check_nginx_status()
+            results["nginx"] = {
+                "status": "success" if nginx_running else "error",
+                "pid": nginx_pid,
+                "stdout": "",
+                "stderr": ""
             }
         else:
-            results["apache"] = {"status": "already_running", "pid": apache_pid}
+            results["nginx"] = {"status": "already_running", "pid": nginx_pid}
         
-        server_state["apache_status"] = "running" if apache_running else "stopped"
+        server_state["nginx_status"] = "running" if nginx_running else "stopped"
         server_state["fpm_status"] = "running" if fpm_running else "stopped"
-        server_state["apache_pid"] = apache_pid
+        server_state["nginx_pid"] = nginx_pid
         server_state["fpm_pid"] = fpm_pid
         
-        overall_status = "success" if (apache_running and fpm_running) else "partial"
-        log_action("start_server", overall_status, f"Apache: {apache_running}, FPM: {fpm_running}")
+        overall_status = "success" if (nginx_running and fpm_running) else "partial"
+        log_action("start_server", overall_status, f"Nginx: {nginx_running}, FPM: {fpm_running}")
         
         return jsonify({
             "status": overall_status,
-            "message": f"Apache: {'running' if apache_running else 'stopped'}, FPM: {'running' if fpm_running else 'stopped'}",
-            "apache_running": apache_running,
+            "message": f"Nginx: {'running' if nginx_running else 'stopped'}, FPM: {'running' if fpm_running else 'stopped'}",
+            "nginx_running": nginx_running,
             "fpm_running": fpm_running,
             "results": results,
-            "is_running": fpm_running and apache_running
+            "is_running": fpm_running and nginx_running
         }), 200
             
     except Exception as e:
@@ -267,31 +270,31 @@ def start_server():
 
 @app.route('/stop_server', methods=['POST'])
 def stop_server():
-    """Stop Apache and PHP-FPM"""
+    """Stop Nginx and PHP-FPM"""
     try:
-        apache_running, apache_pid = check_apache_status()
+        nginx_running, nginx_pid = check_nginx_status()
         fpm_running, fpm_pid = check_fpm_status()
         
-        results = {"apache": {}, "fpm": {}}
+        results = {"nginx": {}, "fpm": {}}
         
-        # Stop Apache first
-        if apache_running:
-            apache_result = subprocess.run(
-                ["apachectl", "-k", "stop"],
+        # Stop Nginx first
+        if nginx_running:
+            nginx_result = subprocess.run(
+                ["service", "nginx", "stop"],
                 capture_output=True,
                 text=True,
                 timeout=10
             )
             time.sleep(2)
-            apache_running, apache_pid = check_apache_status()
-            results["apache"] = {
-                "status": "success" if not apache_running else "error",
-                "pid": apache_pid,
-                "stdout": apache_result.stdout,
-                "stderr": apache_result.stderr
+            nginx_running, nginx_pid = check_nginx_status()
+            results["nginx"] = {
+                "status": "success" if not nginx_running else "error",
+                "pid": nginx_pid,
+                "stdout": nginx_result.stdout,
+                "stderr": nginx_result.stderr
             }
         else:
-            results["apache"] = {"status": "not_running"}
+            results["nginx"] = {"status": "not_running"}
         
         # Stop PHP-FPM
         if fpm_running:
@@ -312,21 +315,21 @@ def stop_server():
         else:
             results["fpm"] = {"status": "not_running"}
         
-        server_state["apache_status"] = "running" if apache_running else "stopped"
+        server_state["nginx_status"] = "running" if nginx_running else "stopped"
         server_state["fpm_status"] = "running" if fpm_running else "stopped"
-        server_state["apache_pid"] = apache_pid
+        server_state["nginx_pid"] = nginx_pid
         server_state["fpm_pid"] = fpm_pid
         
-        overall_status = "success" if (not apache_running and not fpm_running) else "partial"
-        log_action("stop_server", overall_status, f"Apache: {not apache_running}, FPM: {not fpm_running}")
+        overall_status = "success" if (not nginx_running and not fpm_running) else "partial"
+        log_action("stop_server", overall_status, f"Nginx: {not nginx_running}, FPM: {not fpm_running}")
         
         return jsonify({
             "status": overall_status,
-            "message": f"Apache: {'stopped' if not apache_running else 'running'}, FPM: {'stopped' if not fpm_running else 'running'}",
-            "apache_running": apache_running,
+            "message": f"Nginx: {'stopped' if not nginx_running else 'running'}, FPM: {'stopped' if not fpm_running else 'running'}",
+            "nginx_running": nginx_running,
             "fpm_running": fpm_running,
             "results": results,
-            "is_running": fpm_running or apache_running
+            "is_running": fpm_running or nginx_running
         }), 200
             
     except Exception as e:
@@ -339,9 +342,9 @@ def stop_server():
 
 @app.route('/restart', methods=['POST'])
 def restart():
-    """Restart Apache and PHP-FPM (hard restart)"""
+    """Restart Nginx and PHP-FPM (hard restart)"""
     try:
-        results = {"apache": {}, "fpm": {}}
+        results = {"nginx": {}, "fpm": {}}
         
         # Restart PHP-FPM
         fpm_result = subprocess.run(
@@ -359,37 +362,41 @@ def restart():
             "stderr": fpm_result.stderr
         }
         
-        # Restart Apache
-        apache_result = subprocess.run(
-            ["apachectl", "-k", "restart"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
+        # Restart Nginx
+        try:
+            nginx_result = subprocess.run(
+                ["service", "nginx", "restart"],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+        except subprocess.TimeoutExpired:
+            # Service command might hang, but check if nginx actually restarted
+            pass
         time.sleep(1)
-        apache_running, apache_pid = check_apache_status()
-        results["apache"] = {
-            "status": "success" if apache_running else "error",
-            "pid": apache_pid,
-            "stdout": apache_result.stdout,
-            "stderr": apache_result.stderr
+        nginx_running, nginx_pid = check_nginx_status()
+        results["nginx"] = {
+            "status": "success" if nginx_running else "error",
+            "pid": nginx_pid,
+            "stdout": "",
+            "stderr": ""
         }
         
-        server_state["apache_status"] = "running" if apache_running else "stopped"
+        server_state["nginx_status"] = "running" if nginx_running else "stopped"
         server_state["fpm_status"] = "running" if fpm_running else "stopped"
-        server_state["apache_pid"] = apache_pid
+        server_state["nginx_pid"] = nginx_pid
         server_state["fpm_pid"] = fpm_pid
         
-        overall_status = "success" if (apache_running and fpm_running) else "partial"
-        log_action("restart", overall_status, f"Apache PID: {apache_pid}, FPM PID: {fpm_pid}")
+        overall_status = "success" if (nginx_running and fpm_running) else "partial"
+        log_action("restart", overall_status, f"Nginx PID: {nginx_pid}, FPM PID: {fpm_pid}")
         
         return jsonify({
             "status": overall_status,
-            "message": f"Apache: {'running' if apache_running else 'stopped'}, FPM: {'running' if fpm_running else 'stopped'}",
-            "apache_running": apache_running,
+            "message": f"Nginx: {'running' if nginx_running else 'stopped'}, FPM: {'running' if fpm_running else 'stopped'}",
+            "nginx_running": nginx_running,
             "fpm_running": fpm_running,
             "results": results,
-            "is_running": fpm_running and apache_running
+            "is_running": fpm_running and nginx_running
         }), 200
             
     except Exception as e:
@@ -402,9 +409,9 @@ def restart():
 
 @app.route('/graceful-restart', methods=['POST'])
 def graceful_restart():
-    """Gracefully restart Apache and PHP-FPM"""
+    """Gracefully restart Nginx and PHP-FPM"""
     try:
-        results = {"apache": {}, "fpm": {}}
+        results = {"nginx": {}, "fpm": {}}
         fpm_running, fpm_pid = check_fpm_status()
         if not fpm_running:
             # start php-fpm
@@ -433,37 +440,52 @@ def graceful_restart():
             "stderr": fpm_result.stderr
         }
         
-        # Gracefully restart Apache
-        apache_result = subprocess.run(
-            ["apachectl", "-k", "graceful"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
+        # Gracefully reload Nginx
+        nginx_running_before, _ = check_nginx_status()
+        try:
+            if not nginx_running_before:
+                # If not running, start it
+                nginx_result = subprocess.run(
+                    ["service", "nginx", "start"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+            else:
+                # If running, reload it
+                nginx_result = subprocess.run(
+                    ["service", "nginx", "reload"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+        except subprocess.TimeoutExpired:
+            # Service command might hang, but check if nginx is running
+            pass
         time.sleep(1)
-        apache_running, apache_pid = check_apache_status()
-        results["apache"] = {
-            "status": "success" if apache_running else "error",
-            "pid": apache_pid,
-            "stdout": apache_result.stdout,
-            "stderr": apache_result.stderr
+        nginx_running, nginx_pid = check_nginx_status()
+        results["nginx"] = {
+            "status": "success" if nginx_running else "error",
+            "pid": nginx_pid,
+            "stdout": "",
+            "stderr": ""
         }
         
-        server_state["apache_status"] = "running" if apache_running else "stopped"
+        server_state["nginx_status"] = "running" if nginx_running else "stopped"
         server_state["fpm_status"] = "running" if fpm_running else "stopped"
-        server_state["apache_pid"] = apache_pid
+        server_state["nginx_pid"] = nginx_pid
         server_state["fpm_pid"] = fpm_pid
         
-        overall_status = "success" if (apache_running and fpm_running) else "partial"
-        log_action("graceful-restart", overall_status, f"Apache PID: {apache_pid}, FPM PID: {fpm_pid}")
+        overall_status = "success" if (nginx_running and fpm_running) else "partial"
+        log_action("graceful-restart", overall_status, f"Nginx PID: {nginx_pid}, FPM PID: {fpm_pid}")
         
         return jsonify({
             "status": overall_status,
-            "message": f"Apache: {'running' if apache_running else 'stopped'}, FPM: {'running' if fpm_running else 'stopped'}",
-            "apache_running": apache_running,
+            "message": f"Nginx: {'running' if nginx_running else 'stopped'}, FPM: {'running' if fpm_running else 'stopped'}",
+            "nginx_running": nginx_running,
             "fpm_running": fpm_running,
             "results": results,
-            "is_running": fpm_running and apache_running
+            "is_running": fpm_running and nginx_running
         }), 200
             
     except Exception as e:
@@ -475,24 +497,24 @@ def graceful_restart():
 
 @app.route('/graceful-stop', methods=['POST'])
 def graceful_stop():
-    """Gracefully stop Apache and PHP-FPM"""
+    """Gracefully stop Nginx and PHP-FPM"""
     try:
-        results = {"apache": {}, "fpm": {}}
+        results = {"nginx": {}, "fpm": {}}
         
-        # Gracefully stop Apache
-        apache_result = subprocess.run(
-            ["apachectl", "-k", "graceful-stop"],
+        # Gracefully stop Nginx
+        nginx_result = subprocess.run(
+            ["service", "nginx", "stop"],
             capture_output=True,
             text=True,
             timeout=10
         )
         time.sleep(2)
-        apache_running, apache_pid = check_apache_status()
-        results["apache"] = {
-            "status": "success" if not apache_running else "error",
-            "pid": apache_pid,
-            "stdout": apache_result.stdout,
-            "stderr": apache_result.stderr
+        nginx_running, nginx_pid = check_nginx_status()
+        results["nginx"] = {
+            "status": "success" if not nginx_running else "error",
+            "pid": nginx_pid,
+            "stdout": nginx_result.stdout,
+            "stderr": nginx_result.stderr
         }
         
         # Stop PHP-FPM
@@ -511,18 +533,18 @@ def graceful_stop():
             "stderr": fpm_result.stderr
         }
         
-        server_state["apache_status"] = "running" if apache_running else "stopped"
+        server_state["nginx_status"] = "running" if nginx_running else "stopped"
         server_state["fpm_status"] = "running" if fpm_running else "stopped"
-        server_state["apache_pid"] = apache_pid
+        server_state["nginx_pid"] = nginx_pid
         server_state["fpm_pid"] = fpm_pid
         
-        overall_status = "success" if (not apache_running and not fpm_running) else "partial"
-        log_action("graceful-stop", overall_status, f"Apache: {not apache_running}, FPM: {not fpm_running}")
+        overall_status = "success" if (not nginx_running and not fpm_running) else "partial"
+        log_action("graceful-stop", overall_status, f"Nginx: {not nginx_running}, FPM: {not fpm_running}")
         
         return jsonify({
             "status": overall_status,
-            "message": f"Apache: {'stopped' if not apache_running else 'running'}, FPM: {'stopped' if not fpm_running else 'running'}",
-            "apache_running": apache_running,
+            "message": f"Nginx: {'stopped' if not nginx_running else 'running'}, FPM: {'stopped' if not fpm_running else 'running'}",
+            "nginx_running": nginx_running,
             "fpm_running": fpm_running,
             "results": results
         }), 200
@@ -536,7 +558,7 @@ def graceful_stop():
 
 @app.route('/get-server-logs', methods=['GET'])
 def get_server_logs():
-    """Get Apache server logs"""
+    """Get Nginx server logs"""
     try:
         log_type = request.args.get('type', 'error')  # error, access, or all
         lines = request.args.get('lines', '100')
@@ -549,9 +571,9 @@ def get_server_logs():
         logs = {}
         
         if log_type in ['error', 'all']:
-            if os.path.exists(APACHE_LOG_ERROR):
+            if os.path.exists(NGINX_LOG_ERROR):
                 result = subprocess.run(
-                    ["tail", f"-n{lines}", APACHE_LOG_ERROR],
+                    ["tail", f"-n{lines}", NGINX_LOG_ERROR],
                     capture_output=True,
                     text=True
                 )
@@ -560,9 +582,9 @@ def get_server_logs():
                 logs['error'] = "Error log not found"
         
         if log_type in ['access', 'all']:
-            if os.path.exists(APACHE_LOG_ACCESS):
+            if os.path.exists(NGINX_LOG_ACCESS):
                 result = subprocess.run(
-                    ["tail", f"-n{lines}", APACHE_LOG_ACCESS],
+                    ["tail", f"-n{lines}", NGINX_LOG_ACCESS],
                     capture_output=True,
                     text=True
                 )
@@ -635,17 +657,17 @@ def install_aikido():
 
 @app.route('/config-test', methods=['GET'])
 def config_test():
-    """Test Apache configuration"""
+    """Test Nginx configuration"""
     try:
         result = subprocess.run(
-            ["apachectl", "configtest"],
+            ["nginx", "-t"],
             capture_output=True,
             text=True,
             timeout=5
         )
         
-        # apachectl configtest writes to stderr even on success
-        is_success = result.returncode == 0 or "Syntax OK" in result.stderr
+        # nginx -t writes to stderr even on success
+        is_success = result.returncode == 0 or "syntax is ok" in result.stderr
         
         return jsonify({
             "status": "success" if is_success else "error",
@@ -744,11 +766,11 @@ def signal_handler(signum, frame):
     """Handle shutdown signals"""
     print(f"\nReceived signal {signum}, shutting down gracefully...", flush=True)
     
-    # Stop Apache if running
-    apache_running, _ = check_apache_status()
-    if apache_running:
-        print("Stopping Apache...", flush=True)
-        subprocess.run(["apachectl", "-k", "stop"], timeout=10)
+    # Stop Nginx if running
+    nginx_running, _ = check_nginx_status()
+    if nginx_running:
+        print("Stopping Nginx...", flush=True)
+        subprocess.run(["service", "nginx", "stop"], timeout=10)
     
     # Stop PHP-FPM if running
     fpm_running, _ = check_fpm_status()
@@ -765,11 +787,10 @@ if __name__ == '__main__':
     signal.signal(signal.SIGTERM, signal_handler)
     
     print("=" * 60, flush=True)
-    print("Apache + PHP-FPM Control Server Starting", flush=True)
+    print("Nginx + PHP-FPM Control Server Starting", flush=True)
     print("=" * 60, flush=True)
     print(f"Listening on port 8081", flush=True)
     print("=" * 60, flush=True)
     
     # Start Flask server
     app.run(host='0.0.0.0', port=8081, debug=False)
-

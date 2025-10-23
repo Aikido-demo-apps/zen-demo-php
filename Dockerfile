@@ -33,46 +33,25 @@ ADD .fly/php/packages/${PHP_VERSION}.txt /tmp/php-packages.txt
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gnupg2 ca-certificates git-core curl zip unzip \
-                                                  rsync vim-tiny htop sqlite3 cron python3 python3-pip \
-                                                  apache2 \
+                                                  rsync vim-tiny htop sqlite3 nginx supervisor cron python3 python3-pip \
     && ln -sf /usr/bin/vim.tiny /etc/alternatives/vim \
     && ln -sf /etc/alternatives/vim /usr/bin/vim \
     && echo "deb http://ppa.launchpad.net/ondrej/php/ubuntu jammy main" > /etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list \
     && apt-get update \
     && apt-get -y --no-install-recommends install $(cat /tmp/php-packages.txt) \
-    && a2enmod rewrite headers proxy proxy_fcgi setenvif \
-    && a2dissite 000-default \
+    && ln -sf /usr/sbin/php-fpm${PHP_VERSION} /usr/sbin/php-fpm \
     && mkdir -p /var/www/html/public && echo "index" > /var/www/html/public/index.php \
-    && mkdir -p /var/run/php \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/*
 
 # 2. Copy config files to proper locations
-COPY .fly/apache/laravel.conf /etc/apache2/sites-available/laravel.conf
-COPY .fly/apache/ports.conf /etc/apache2/ports.conf
-COPY .fly/fpm/pool.d/www.conf /tmp/custom-fpm.conf
-COPY .fly/entrypoint-apache.sh /entrypoint
-RUN a2ensite laravel && chmod +x /entrypoint \
-    && sed -n '/^\[www\]/,$p' /tmp/custom-fpm.conf > /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && sed -i "s/\${PHP_PM_MAX_CHILDREN}/${PHP_PM_MAX_CHILDREN}/" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && sed -i "s/\${PHP_PM_START_SERVERS}/${PHP_PM_START_SERVERS}/" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && sed -i "s/\${PHP_MIN_SPARE_SERVERS}/${PHP_MIN_SPARE_SERVERS}/" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && sed -i "s/\${PHP_MAX_SPARE_SERVERS}/${PHP_MAX_SPARE_SERVERS}/" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && sed -i 's/^;pid = .*/pid = \/run\/php\/php8.2-fpm.pid/' /etc/php/${PHP_VERSION}/fpm/php-fpm.conf \
-    && sed -i 's/^;error_log = .*/error_log = \/var\/log\/php-fpm.log/' /etc/php/${PHP_VERSION}/fpm/php-fpm.conf \
-    && sed -i 's/^;daemonize = .*/daemonize = yes/' /etc/php/${PHP_VERSION}/fpm/php-fpm.conf \
-    && sed -i 's/^variables_order = .*/variables_order = "EGPCS"/' /etc/php/${PHP_VERSION}/fpm/php.ini \
-    && sed -i 's/^;variables_order = .*/variables_order = "EGPCS"/' /etc/php/${PHP_VERSION}/fpm/php.ini \
-    && echo "" >> /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && echo "; Explicitly pass environment variables to PHP (replaced at runtime)" >> /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && echo "env[AIKIDO_BLOCKING] = __AIKIDO_BLOCKING__" >> /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && echo "env[AIKIDO_BLOCK] = __AIKIDO_BLOCK__" >> /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && echo "env[AIKIDO_DISK_LOGS] = __AIKIDO_DISK_LOGS__" >> /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && echo "env[AIKIDO_DEBUG] = __AIKIDO_DEBUG__" >> /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && echo "env[AIKIDO_TOKEN] = __AIKIDO_TOKEN__" >> /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && echo "env[AIKIDO_ENDPOINT] = __AIKIDO_ENDPOINT__" >> /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && echo "env[AIKIDO_REALTIME_ENDPOINT] = __AIKIDO_REALTIME_ENDPOINT__" >> /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && rm /tmp/custom-fpm.conf
+
+COPY .fly/nginx/ /etc/nginx/
+COPY .fly/fpm/ /etc/php/${PHP_VERSION}/fpm/
+COPY .fly/supervisor/ /etc/supervisor/
+COPY .fly/entrypoint-nginx.sh /entrypoint
+COPY .fly/start-nginx.sh /usr/local/bin/start-nginx
+RUN chmod +x /entrypoint && chmod +x /usr/local/bin/start-nginx
 
 # 3. Copy application code, skipping files based on .dockerignore
 COPY . /var/www/html
@@ -90,7 +69,7 @@ RUN composer install --optimize-autoloader --no-dev \
     && sed -i='' '/->withMiddleware(function (Middleware \$middleware) {/a\
         \$middleware->trustProxies(at: "*");\
     ' bootstrap/app.php; \
-    if [ -d .fly ]; then cp .fly/entrypoint-apache.sh /entrypoint; chmod +x /entrypoint; fi;
+    if [ -d .fly ]; then cp .fly/entrypoint-nginx.sh /entrypoint; chmod +x /entrypoint; fi;
 
 # Multi-stage build: Build static assets
 # This allows us to not include Node within the final container
@@ -144,10 +123,8 @@ ENV AIKIDO_BLOCK=true
 # 5. Setup Entrypoint
 EXPOSE 8080
 EXPOSE 8081
-RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
-ENV AIKIDO_DISK_LOGS=true
-ENV AIKIDO_DEBUG=true
 
-#ENTRYPOINT ["/entrypoint"]
+
 RUN apt-get update && apt-get install -y tini && apt-get clean
 ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint"]
+#ENTRYPOINT ["/entrypoint"]

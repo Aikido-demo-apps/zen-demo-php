@@ -15,7 +15,7 @@ copy `.env.example` to `.env`
 
 ## run
 
-This application now uses **Apache + mod_php** with a Python control server for management.
+This application now uses **Nginx + PHP-FPM** with a Python control server for management.
 
 ### Build and Run
 
@@ -29,26 +29,26 @@ docker run -p 8080:8080 -p 8081:8081 --env-file .env --name "zen-demo-php" --rm 
 
 ### Ports
 
-- **8080**: Apache web server (PHP application)
-- **8081**: Python control server (Apache management API)
+- **8080**: Nginx web server (PHP application)
+- **8081**: Python control server (Nginx management API)
 
 ### Control Server
 
-The Python control server provides HTTP endpoints to manage the Apache server:
+The Python control server provides HTTP endpoints to manage the Nginx server:
 
 - `GET /health` - Health check
-- `GET /status` - Get Apache status
-- `POST /start_server` - Start Apache
-- `POST /stop_server` - Stop Apache
-- `POST /restart` - Hard restart Apache
-- `POST /graceful-restart` - Graceful restart Apache
-- `GET /get-server-logs` - Get Apache logs
-- `GET /config-test` - Test Apache configuration
+- `GET /status` - Get Nginx status
+- `POST /start_server` - Start Nginx
+- `POST /stop_server` - Stop Nginx
+- `POST /restart` - Hard restart Nginx
+- `POST /graceful-restart` - Graceful restart Nginx
+- `GET /get-server-logs` - Get Nginx logs
+- `GET /config-test` - Test Nginx configuration
 
-#### Quick Start Apache
+#### Quick Start Nginx
 
 ```bash
-# Start Apache
+# Start Nginx
 curl -X POST http://localhost:8081/start_server
 
 # Check status
