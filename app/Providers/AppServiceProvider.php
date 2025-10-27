@@ -24,6 +24,6 @@ class AppServiceProvider extends ServiceProvider
     {
         $kernel = $this->app->make(Kernel::class);
         $kernel->pushMiddleware(UserMiddleware::class);
-      //  $kernel->pushMiddleware(AikidoMiddleware::class);
+        $kernel->pushMiddleware(AikidoMiddleware::class);
     }
 }
