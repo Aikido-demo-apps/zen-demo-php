@@ -15,7 +15,7 @@ class Helpers
             exec($command, $outputArray, $returnVar);
             $output = implode("\n", $outputArray);
             if (empty($output) && $returnVar !== 0) {
-                $output = "Command execution failed with code: $returnVar";
+                return response()->json(["error" => "Command execution failed with code: $returnVar"], 400);
             }
         } catch (Exception $e) {
             if (str_contains($e->getMessage(), "Aikido firewall has blocked")) {
