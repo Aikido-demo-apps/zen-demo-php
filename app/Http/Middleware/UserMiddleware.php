@@ -27,6 +27,11 @@ class UserMiddleware
             }
         }
 
+        $rateLimitingGroupId = $request->cookie('RateLimitingGroupID');
+        if ($rateLimitingGroupId) {
+            $this->setRateLimitGroup($rateLimitingGroupId);
+        }
+
         return $next($request);
     }
 
@@ -34,6 +39,13 @@ class UserMiddleware
     {
         if (extension_loaded('aikido')) {
             \aikido\set_user($id, $name);
+        }
+    }
+
+    private function setRateLimitGroup($group)
+    {
+        if (extension_loaded('aikido')) {
+            \aikido\set_rate_limit_group($group);
         }
     }
 
