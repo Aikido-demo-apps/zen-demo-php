@@ -36,6 +36,9 @@ class AikidoMiddleware
                 else if ($decision->trigger == "ip") {
                     return response("Your IP ({$decision->ip}) exceeded the rate limit for this endpoint!", 429);
                 }
+                else if ($decision->trigger == "group") {
+                    return response("Your rate limit group exceeded the rate limit for this endpoint!", 429);
+                }
             }
         }
 
