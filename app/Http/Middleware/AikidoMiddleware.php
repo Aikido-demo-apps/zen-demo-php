@@ -36,6 +36,8 @@ class AikidoMiddleware
                 else if ($decision->trigger == "ip") {
                     return response("Your IP ({$decision->ip}) exceeded the rate limit for this endpoint!", 429);
                 }
+            } else {
+                return response('Blocked! '.serialize($decision), 429);
             }
         }
 
