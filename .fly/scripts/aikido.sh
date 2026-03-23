@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 cd /tmp || exit
 
-curl -L -O "https://github.com/AikidoSec/firewall-php/releases/download/v1.5.2/aikido-php-firewall.$(uname -i).deb"
+curl -L -O "https://github.com/AikidoSec/firewall-php/releases/download/v1.5.4/aikido-php-firewall.$(uname -i).deb"
 
 dpkg -i -E "./aikido-php-firewall.$(uname -i).deb"
