@@ -20,6 +20,7 @@ Route::get('/test_user_blocking', [HomeController::class, 'userBlock']);
 Route::get('/clear', [ApiController::class, 'clear']);
 Route::get('/api/pets', [ApiController::class, 'getPets']);
 Route::post('/api/create', [ApiController::class, 'createPet']);
+Route::post('/api/create-form', [ApiController::class, 'createPetForm']);
 Route::post('/api/execute', [ApiController::class, 'executeCommandPost']);
 Route::get('/api/execute/{command}', [ApiController::class, 'executeCommandGet']);
 Route::post('/api/request', [ApiController::class, 'makeRequest']);

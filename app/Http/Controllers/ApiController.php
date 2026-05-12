@@ -30,6 +30,14 @@ class ApiController extends Controller
         return $response;
     }
 
+    public function createPetForm(Request $request)
+    {
+        $name = $request->input('name', '');
+
+        $response = DatabaseHelper::createPetByName($name);
+        return $response;
+    }
+
     public function executeCommandPost(Request $request)
     {
         $data = $request->json()->all();
