@@ -81,14 +81,8 @@ class DatabaseHelper
 
     public static function createPetByName($petName)
     {
-        try {
-            // Intentionally vulnerable to SQL injection by using string concatenation
-            $query = "INSERT INTO pets (pet_name, owner) VALUES ('" . $petName . "', 'Aikido Security')";
-            $rowsAffected = DB::statement($query);
-            return $rowsAffected ? 1 : 0;
-        } catch (Exception $e) {
-            echo "Database error occurred: " . $e->getMessage();
-        }
-        return -1;
+        // Intentionally vulnerable to SQL injection by using string concatenation
+        $query = "INSERT INTO pets (pet_name, owner) VALUES ('" . $petName . "', 'Aikido Security')";
+        return DB::statement($query);
     }
 }
