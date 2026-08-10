@@ -26,24 +26,23 @@ class ApiController extends Controller
         $data = $request->json()->all();
         $name = $data['name'] ?? '';
 
-        return $this->createPetByName($name);
+        return $this->createPetAndReturnResponse($name);
     }
 
     public function createPetForm(Request $request)
     {
-        return $this->createPetByName($request->input('name', ''));
+        return $this->createPetAndReturnResponse($request->input('name', ''));
     }
 
-    private function createPetByName($name)
+    private function createPetAndReturnResponse($name)
     {
         try {
             if (DatabaseHelper::createPetByName($name)) {
-                return response()->json(["success" => "Pet created successfully"]);
+                return "Success!";
             }
-            return response()->json(["error" => "Failed to create pet"], 400);
-        } catch (Exception $e) {
-            $statusCode = str_contains($e->getMessage(), "Aikido firewall has blocked") ? 500 : 400;
-            return response()->json(["error" => $e->getMessage()], $statusCode);
+            return response("Database error occurred", 500);
+        } catch (Exception) {
+            return response("Database error occurred", 500);
         }
     }
 
