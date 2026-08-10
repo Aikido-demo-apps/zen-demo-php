@@ -14,6 +14,11 @@ server {
 
     access_log /dev/stdout fly;
 
+    # QA attack paths under /api must reach PHP, including paths with hidden segments.
+    location ^~ /api/ {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
     location / {
         try_files $uri $uri/ /index.php?$query_string;
     }

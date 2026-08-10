@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use Exception;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use App\Helpers\DatabaseHelper;
 use App\Helpers\Helpers;
 
@@ -23,15 +23,15 @@ class ApiController extends Controller
 
     public function createPet(Request $request)
     {
-        $data = $request->json()->all();
-        $name = $data['name'] ?? '';
-
-        $rowsCreated = DatabaseHelper::createPetByName($name);
-
-        if ($rowsCreated == -1) {
-            return "Database error occurred";
+        $name = $request->input('name', '');
+        try {
+            if (DatabaseHelper::createPetByName($name)) {
+                return "Success!";
+            }
+            return response("Database error occurred", 500);
+        } catch (Exception) {
+            return response("Database error occurred", 500);
         }
-        return "Success!";
     }
 
     public function executeCommandPost(Request $request)
@@ -63,7 +63,22 @@ class ApiController extends Controller
         $data = $request->json()->all();
         $url = $data['url'] ?? '';
 
-        $response = Helpers::makeHttpRequest($url);
+        $response = Helpers::makeHttpRequest2($url);
+        return $response;
+    }
+
+    public function makeRequestDifferentPort(Request $request)
+    {
+        $data = $request->json()->all();
+        $url = $data['url'] ?? '';
+        $port = $data['port'] ?? '';
+
+        $separatorPosition = strrpos($url, ':');
+        if ($separatorPosition === false || $port === '') {
+            return response()->json(["error" => "Invalid URL or port"], 400);
+        }
+
+        $response = Helpers::makeHttpRequest(substr($url, 0, $separatorPosition) . ':' . $port);
         return $response;
     }
 
@@ -71,6 +86,13 @@ class ApiController extends Controller
     {
         $filePath = $request->query('path');
         $content = Helpers::readFile($filePath);
+        return $content;
+    }
+
+    public function readFile2(Request $request)
+    {
+        $filePath = $request->query('path');
+        $content = Helpers::readFile2($filePath);
         return $content;
     }
 }
