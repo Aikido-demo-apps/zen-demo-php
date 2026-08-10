@@ -23,19 +23,7 @@ class ApiController extends Controller
 
     public function createPet(Request $request)
     {
-        $data = $request->json()->all();
-        $name = $data['name'] ?? '';
-
-        return $this->createPetAndReturnResponse($name);
-    }
-
-    public function createPetForm(Request $request)
-    {
-        return $this->createPetAndReturnResponse($request->input('name', ''));
-    }
-
-    private function createPetAndReturnResponse($name)
-    {
+        $name = $request->input('name', '');
         try {
             if (DatabaseHelper::createPetByName($name)) {
                 return "Success!";
