@@ -26,11 +26,11 @@ console_command = 'php /var/www/html/artisan tinker'
   internal_port = 8080
   force_https = true
   auto_stop_machines = false
-  auto_start_machines = false
+  auto_start_machines = true
   min_machines_running = 1
   processes = ['app']
 
 [[vm]]
-  memory = '512mb'
+  memory = '1024mb'
   cpu_kind = 'shared'
   cpus = 1
