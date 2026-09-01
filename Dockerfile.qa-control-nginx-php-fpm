@@ -2,11 +2,8 @@
 
 ARG PHP_VERSION=8.2
 ARG NODE_VERSION=18
-FROM ubuntu:22.04 as base
-LABEL fly_launch_runtime="laravel"
+FROM ubuntu:22.04 AS app
 
-# PHP_VERSION needs to be repeated here
-# See https://docs.docker.com/engine/reference/builder/#understand-how-arg-and-from-interact
 ARG PHP_VERSION
 ENV DEBIAN_FRONTEND=noninteractive \
     COMPOSER_ALLOW_SUPERUSER=1 \
@@ -23,40 +20,44 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PHP_MAX_EXECUTION_TIME=90 \
     PHP_POST_MAX_SIZE=100M \
     PHP_UPLOAD_MAX_FILE_SIZE=100M \
-    PHP_ALLOW_URL_FOPEN=Off
+    PHP_ALLOW_URL_FOPEN=Off \
+    QA_SERVER=nginx-php-fpm \
+    QA_PHP_VERSION=${PHP_VERSION} \
+    AIKIDO_BLOCKING=true \
+    AIKIDO_BLOCK=true \
+    AIKIDO_DISK_LOGS=true \
+    AIKIDO_DEBUG=true
 
-# Prepare base container:
-# 1. Install PHP, Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 COPY .fly/php/ondrej_ubuntu_php.gpg /etc/apt/trusted.gpg.d/ondrej_ubuntu_php.gpg
 ADD .fly/php/packages/${PHP_VERSION}.txt /tmp/php-packages.txt
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gnupg2 ca-certificates git-core curl zip unzip \
-                                                  rsync vim-tiny htop sqlite3 nginx supervisor cron \
+        rsync vim-tiny htop sqlite3 nginx cron python3-flask procps tini \
     && ln -sf /usr/bin/vim.tiny /etc/alternatives/vim \
     && ln -sf /etc/alternatives/vim /usr/bin/vim \
     && echo "deb http://ppa.launchpad.net/ondrej/php/ubuntu jammy main" > /etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list \
     && apt-get update \
     && apt-get -y --no-install-recommends install $(cat /tmp/php-packages.txt) \
-    && ln -sf /usr/sbin/php-fpm${PHP_VERSION} /usr/sbin/php-fpm \
-    && mkdir -p /var/www/html/public && echo "index" > /var/www/html/public/index.php \
+    && mkdir -p /var/www/html/public \
+    && echo "index" > /var/www/html/public/index.php \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/*
 
-# 2. Copy config files to proper locations
 COPY .fly/nginx/ /etc/nginx/
 COPY .fly/fpm/ /etc/php/${PHP_VERSION}/fpm/
-COPY .fly/supervisor/ /etc/supervisor/
-COPY .fly/entrypoint.sh /entrypoint
-COPY .fly/start-nginx.sh /usr/local/bin/start-nginx
-RUN chmod 754 /usr/local/bin/start-nginx
+COPY .qa-control-tests/common/control_server.py /usr/local/bin/control-server
+COPY .qa-control-tests/common/entrypoint.sh /qa-entrypoint
+RUN chmod 755 /usr/local/bin/control-server /qa-entrypoint \
+    && sed -i 's/^daemon off;/daemon on;/' /etc/nginx/nginx.conf \
+    && sed -i 's/^daemonize = no/daemonize = yes/' /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
+    && sed -i "s|^error_log = /proc/self/fd/2|error_log = /var/log/php${PHP_VERSION}-fpm.log|" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
+    && sed -i "/^\[global\]/a pid = /run/php/php${PHP_VERSION}-fpm.pid" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
 
-# 3. Copy application code, skipping files based on .dockerignore
 COPY . /var/www/html
 WORKDIR /var/www/html
 
-# 4. Setup application dependencies
 RUN composer install --optimize-autoloader --no-dev \
     && mkdir -p storage/logs \
     && php artisan optimize:clear \
@@ -65,21 +66,13 @@ RUN composer install --optimize-autoloader --no-dev \
     && sed -i='' '/->withMiddleware(function (Middleware \$middleware) {/a\
         \$middleware->trustProxies(at: "*");\
     ' bootstrap/app.php; \
-    if [ -d .fly ]; then cp .fly/entrypoint.sh /entrypoint; chmod +x /entrypoint; fi;
+    rm -rf /var/www/html/.qa-control-tests
 
-# Multi-stage build: Build static assets
-# This allows us to not include Node within the final container
-FROM node:${NODE_VERSION} as node_modules_go_brrr
+FROM node:${NODE_VERSION} AS assets
 
-RUN mkdir -p  /app
 WORKDIR /app
 COPY . .
-COPY --from=base /var/www/html/vendor /app/vendor
-
-# Use yarn or npm depending on what type of
-# lock file we might find. Defaults to
-# NPM if no lock file is found.
-# Note: We run "production" for Mix and "build" for Vite
+COPY --from=app /var/www/html/vendor /app/vendor
 RUN if [ -f "vite.config.js" ]; then \
         ASSET_CMD="build"; \
     else \
@@ -98,24 +91,14 @@ RUN if [ -f "vite.config.js" ]; then \
     else \
         npm install; \
         npm run $ASSET_CMD; \
-    fi;
+    fi
 
-# From our base container created above, we
-# create our final image, adding in static
-# assets that we generated above
-FROM base
+FROM app
 
-# Packages like Laravel Nova may have added assets to the public directory
-# or maybe some custom assets were added manually! Either way, we merge
-# in the assets we generated above rather than overwrite them
-COPY --from=node_modules_go_brrr /app/public /var/www/html/public-npm
+COPY --from=assets /app/public /var/www/html/public-npm
 RUN rsync -ar /var/www/html/public-npm/ /var/www/html/public/ \
     && rm -rf /var/www/html/public-npm \
     && chown -R www-data:www-data /var/www/html/public
 
-ENV AIKIDO_BLOCKING=true
-
-# 5. Setup Entrypoint
-EXPOSE 8080
-
-ENTRYPOINT ["/entrypoint"]
+EXPOSE 8080 8081
+ENTRYPOINT ["/usr/bin/tini", "--", "/qa-entrypoint"]
