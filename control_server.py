@@ -20,7 +20,7 @@ APACHE_LOG_ERROR = "/var/log/apache2/error.log"
 APACHE_LOG_ACCESS = "/var/log/apache2/access.log"
 APACHE_LOG_OTHER = "/var/log/apache2/other_vhosts_access.log"
 APACHE_PIDFILE = "/var/run/apache2/apache2.pid"
-PHP_FPM_PIDFILE = "/run/php/php8.2-fpm.sock"
+PHP_FPM_PIDFILE = "/run/php/php8.2-fpm.pid"
 PHP_FPM_LOG = "/var/log/php8.2-fpm.log"
 
 # Global state
@@ -156,6 +156,16 @@ def check_fpm_status():
     return False, None
 
 
+def wait_for_fpm_state(expected_running, timeout=10):
+    """Wait for a service command to be reflected in PHP-FPM's process state."""
+    deadline = time.monotonic() + timeout
+    while True:
+        fpm_running, fpm_pid = check_fpm_status()
+        if fpm_running == expected_running or time.monotonic() >= deadline:
+            return fpm_running, fpm_pid
+        time.sleep(1)
+
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
@@ -210,8 +220,7 @@ def start_server():
                 text=True,
                 timeout=10
             )
-            time.sleep(1)
-            fpm_running, fpm_pid = check_fpm_status()
+            fpm_running, fpm_pid = wait_for_fpm_state(True)
             results["fpm"] = {
                 "status": "success" if fpm_running else "error",
                 "pid": fpm_pid,
@@ -301,8 +310,7 @@ def stop_server():
                 text=True,
                 timeout=50
             )
-            time.sleep(2)
-            fpm_running, fpm_pid = check_fpm_status()
+            fpm_running, fpm_pid = wait_for_fpm_state(False)
             results["fpm"] = {
                 "status": "success" if not fpm_running else "error",
                 "pid": fpm_pid,
@@ -350,8 +358,7 @@ def restart():
             text=True,
             timeout=50
         )
-        time.sleep(1)
-        fpm_running, fpm_pid = check_fpm_status()
+        fpm_running, fpm_pid = wait_for_fpm_state(True)
         results["fpm"] = {
             "status": "success" if fpm_running else "error",
             "pid": fpm_pid,
@@ -424,8 +431,7 @@ def graceful_restart():
                 timeout=50
             )
 
-        time.sleep(1)
-        fpm_running, fpm_pid = check_fpm_status()
+        fpm_running, fpm_pid = wait_for_fpm_state(True)
         results["fpm"] = {
             "status": "success" if fpm_running else "error",
             "pid": fpm_pid,
@@ -502,8 +508,7 @@ def graceful_stop():
             text=True,
             timeout=50
         )
-        time.sleep(2)
-        fpm_running, fpm_pid = check_fpm_status()
+        fpm_running, fpm_pid = wait_for_fpm_state(False)
         results["fpm"] = {
             "status": "success" if not fpm_running else "error",
             "pid": fpm_pid,
