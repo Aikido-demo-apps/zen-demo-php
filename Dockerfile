@@ -2,6 +2,7 @@
 
 ARG PHP_VERSION=8.2
 ARG NODE_VERSION=18
+ARG IMAGE_TARGET=production
 FROM ubuntu:22.04 as base
 LABEL fly_launch_runtime="laravel"
 
@@ -103,7 +104,7 @@ RUN if [ -f "vite.config.js" ]; then \
 # From our base container created above, we
 # create our final image, adding in static
 # assets that we generated above
-FROM base
+FROM base AS production
 
 # Packages like Laravel Nova may have added assets to the public directory
 # or maybe some custom assets were added manually! Either way, we merge
@@ -111,6 +112,7 @@ FROM base
 COPY --from=node_modules_go_brrr /app/public /var/www/html/public-npm
 RUN rsync -ar /var/www/html/public-npm/ /var/www/html/public/ \
     && rm -rf /var/www/html/public-npm \
+    && rm -rf /var/www/html/.qa \
     && chown -R www-data:www-data /var/www/html/public
 
 ENV AIKIDO_BLOCKING=true
@@ -119,3 +121,71 @@ ENV AIKIDO_BLOCKING=true
 EXPOSE 8080
 
 ENTRYPOINT ["/entrypoint"]
+
+# The firewall QA suite controls the web server lifecycle through port 8081.
+# These stages are opt-in; the default production image above is unchanged.
+FROM production AS qa-common
+
+ARG PHP_VERSION
+ENV QA_PHP_VERSION=${PHP_VERSION} \
+    AIKIDO_BLOCK=true \
+    AIKIDO_DISK_LOGS=true \
+    AIKIDO_DEBUG=true
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3-flask procps tini \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY .qa/control_server.py /usr/local/bin/control-server
+COPY .qa/entrypoint.sh /qa-entrypoint
+RUN chmod 755 /usr/local/bin/control-server /qa-entrypoint
+
+EXPOSE 8081
+ENTRYPOINT ["/usr/bin/tini", "--", "/qa-entrypoint"]
+
+FROM qa-common AS qa-nginx-php-fpm
+
+ARG PHP_VERSION
+ENV QA_SERVER=nginx-php-fpm
+RUN sed -i 's/^daemon off;/daemon on;/' /etc/nginx/nginx.conf \
+    && sed -i 's/^daemonize = no/daemonize = yes/' /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
+    && sed -i "s|^error_log = /proc/self/fd/2|error_log = /var/log/php${PHP_VERSION}-fpm.log|" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
+    && sed -i "/^\[global\]/a pid = /run/php/php${PHP_VERSION}-fpm.pid" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
+
+FROM qa-common AS qa-apache
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends apache2 \
+    && a2enmod rewrite headers \
+    && a2dissite 000-default \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY .qa/apache/ports.conf /etc/apache2/ports.conf
+RUN echo 'ServerName localhost' >> /etc/apache2/apache2.conf
+
+FROM qa-apache AS qa-apache-php-fpm
+
+ARG PHP_VERSION
+ENV QA_SERVER=apache-php-fpm
+COPY .qa/apache/php-fpm.conf /etc/apache2/sites-available/laravel.conf
+RUN a2enmod proxy proxy_fcgi setenvif \
+    && a2ensite laravel \
+    && sed -i 's/^daemonize = no/daemonize = yes/' /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
+    && sed -i "s|^error_log = /proc/self/fd/2|error_log = /var/log/php${PHP_VERSION}-fpm.log|" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
+    && sed -i "/^\[global\]/a pid = /run/php/php${PHP_VERSION}-fpm.pid" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
+
+FROM qa-apache AS qa-apache-mod-php
+
+ARG PHP_VERSION
+ENV QA_SERVER=apache-mod-php
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libapache2-mod-php${PHP_VERSION} \
+    && a2enmod php${PHP_VERSION} \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+COPY .qa/apache/mod-php.conf /etc/apache2/sites-available/laravel.conf
+RUN a2ensite laravel
+
+FROM ${IMAGE_TARGET} AS final
