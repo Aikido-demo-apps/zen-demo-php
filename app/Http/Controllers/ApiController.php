@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use Exception;
 use Illuminate\Http\Request;
 use App\Helpers\DatabaseHelper;
 use App\Helpers\Helpers;
@@ -23,15 +22,7 @@ class ApiController extends Controller
 
     public function createPet(Request $request)
     {
-        $name = $request->input('name', '');
-        try {
-            if (DatabaseHelper::createPetByName($name)) {
-                return "Success!";
-            }
-            return response("Database error occurred", 500);
-        } catch (Exception) {
-            return response("Database error occurred", 500);
-        }
+        return DatabaseHelper::createPetByName($request->input('name', ''));
     }
 
     public function executeCommandPost(Request $request)

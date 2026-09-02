@@ -81,8 +81,18 @@ class DatabaseHelper
 
     public static function createPetByName($petName)
     {
-        // Intentionally vulnerable to SQL injection by using string concatenation
-        $query = "INSERT INTO pets (pet_name, owner) VALUES ('" . $petName . "', 'Aikido Security')";
-        return DB::statement($query);
+        try {
+            // Intentionally vulnerable to SQL injection by using string concatenation
+            $query = "INSERT INTO pets (pet_name, owner) VALUES ('" . $petName . "', 'Aikido Security')";
+            if (DB::statement($query)) {
+                return "Success!";
+            }
+            return response("Database error occurred", 500);
+        } catch (Exception $e) {
+            if (str_contains($e->getMessage(), "Aikido firewall has blocked")) {
+                return response($e->getMessage(), 500);
+            }
+            return response("Database error occurred", 500);
+        }
     }
 }
