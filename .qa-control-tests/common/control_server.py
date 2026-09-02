@@ -16,7 +16,7 @@ SERVER_MODE = os.environ.get("QA_SERVER", "")
 PHP_VERSION = os.environ.get("QA_PHP_VERSION", "8.2")
 
 
-def process(name, pidfile, pgrep, commands, logs):
+def process_spec(name, pidfile, pgrep, commands, logs):
     return {
         "name": name,
         "pidfile": pidfile,
@@ -26,7 +26,7 @@ def process(name, pidfile, pgrep, commands, logs):
     }
 
 
-APACHE = process(
+APACHE = process_spec(
     "apache",
     "/run/apache2/apache2.pid",
     ["pgrep", "-x", "apache2"],
@@ -43,7 +43,7 @@ APACHE = process(
     },
 )
 
-NGINX = process(
+NGINX = process_spec(
     "nginx",
     "/run/nginx.pid",
     ["pgrep", "-x", "nginx"],
@@ -60,7 +60,7 @@ NGINX = process(
     },
 )
 
-FPM = process(
+FPM = process_spec(
     "fpm",
     f"/run/php/php{PHP_VERSION}-fpm.pid",
     ["pgrep", "-f", "php-fpm: master"],
@@ -84,7 +84,6 @@ if SERVER_MODE not in MODES:
     raise RuntimeError(f"Unsupported QA_SERVER: {SERVER_MODE!r}")
 
 PROCESSES = MODES[SERVER_MODE]
-last_action = {"name": None, "time": None}
 
 
 def live_pid(pid):
@@ -109,7 +108,8 @@ def pidfile_pid(spec):
 
 def process_pids(spec):
     pids = set()
-    if pid := pidfile_pid(spec):
+    pid = pidfile_pid(spec)
+    if pid:
         pids.add(pid)
 
     result = subprocess.run(
@@ -117,21 +117,20 @@ def process_pids(spec):
     )
     if result.returncode == 0:
         for value in result.stdout.splitlines():
-            try:
+            value = value.strip()
+            if value.isdigit():
                 pids.add(int(value))
-            except ValueError:
-                pass
     return sorted(pid for pid in pids if live_pid(pid))
 
 
 def state():
-    process_state = {
-        spec["name"]: {
-            "status": "running" if (pids := process_pids(spec)) else "stopped",
+    process_state = {}
+    for spec in PROCESSES:
+        pids = process_pids(spec)
+        process_state[spec["name"]] = {
+            "status": "running" if pids else "stopped",
             "pids": pids,
         }
-        for spec in PROCESSES
-    }
     return process_state
 
 
@@ -223,10 +222,6 @@ def run_lifecycle(action):
             wait_for_ready_pidfile(spec)
 
     final_state, reached_state = wait_for_state(expected_running)
-    last_action.update(
-        name=action,
-        time=datetime.now(timezone.utc).isoformat(),
-    )
     still_running = any(
         details["status"] == "running" for details in final_state.values()
     )
@@ -270,7 +265,6 @@ def status():
             "status": "running" if is_running else "stopped",
             "is_running": is_running,
             "processes": current,
-            "last_action": last_action,
         }
     )
 
