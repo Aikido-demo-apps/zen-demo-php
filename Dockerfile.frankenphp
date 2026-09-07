@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1
+
+ARG PHP_VERSION=8.2
+FROM dunglas/frankenphp:php${PHP_VERSION}-bookworm AS app
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    COMPOSER_ALLOW_SUPERUSER=1 \
+    COMPOSER_HOME=/composer \
+    AIKIDO_BLOCKING=true
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl git unzip sqlite3 supervisor procps \
+    && install-php-extensions pdo_pgsql pgsql \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY .fly/supervisor/supervisord.conf /etc/supervisor/supervisord.conf
+COPY .fly/frankenphp/supervisor.conf /etc/supervisor/conf.d/frankenphp.conf
+COPY .fly/frankenphp/Caddyfile /etc/caddy/Caddyfile
+COPY --chmod=755 .fly/entrypoint.sh /entrypoint
+
+WORKDIR /var/www/html
+COPY . .
+# The shared frontend's production script only copies these static assets.
+COPY resources/public/ public/
+
+RUN composer install --optimize-autoloader --no-dev \
+    && mkdir -p storage/logs \
+    && sed -i '/->withMiddleware(function (Middleware $middleware) {/a\        $middleware->trustProxies(at: "*");' bootstrap/app.php \
+    && chown -R www-data:www-data /var/www/html
+
+EXPOSE 8080
+ENTRYPOINT ["/entrypoint"]
+
+FROM app AS worker
+COPY .fly/frankenphp/worker.php public/index.php
+COPY .fly/frankenphp/Caddyfile.worker /etc/caddy/Caddyfile
+# Preserve the worker demo's pcntl setting for its long-running PHP threads.
+RUN rm -f /usr/local/etc/php/conf.d/docker-php-ext-pcntl.ini
+
+# A plain build starts classic mode, matching the regular PHP entrypoint.
+FROM app AS classic

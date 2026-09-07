@@ -7,21 +7,30 @@ on:
       - main
 jobs:
   deploy:
-    name: Deploy app
+    name: Deploy ${{ matrix.runtime }}
     runs-on: ubuntu-latest
-    concurrency: deploy-group    # optional: ensure only one action runs at a time
+    concurrency: deploy-${{ matrix.runtime }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: php
+            configs: fly.toml fly-danger.toml fly-demo.toml
+          - runtime: frankenphp
+            configs: fly-frankenphp.toml fly-frankenphp-danger.toml
+          - runtime: frankenphp-worker
+            configs: fly-frankenphp-worker.toml fly-frankenphp-worker-danger.toml
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.ACCESS_TOKEN }}
           submodules: recursive
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only
+      - name: Deploy apps
+        run: |
+          for config in $FLY_CONFIGS; do
+            flyctl deploy --remote-only --config "$config"
+          done
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      - run: flyctl deploy --remote-only --config fly-danger.toml
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      - run: flyctl deploy --remote-only --config fly-demo.toml
-        env:
+          FLY_CONFIGS: ${{ matrix.configs }}
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
