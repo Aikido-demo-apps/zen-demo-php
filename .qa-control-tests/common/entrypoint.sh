@@ -2,10 +2,6 @@
 
 set -e
 
-# The shared frontend has no Blade templates, but Laravel's view cache command
-# still requires the directory to exist.
-mkdir -p /var/www/html/resources/views
-
 for script in /var/www/html/.fly/scripts/*.sh; do
     if [ -f "$script" ]; then
         bash "$script" -e

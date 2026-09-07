@@ -1,7 +1,6 @@
 # syntax = docker/dockerfile:experimental
 
 ARG PHP_VERSION=8.2
-ARG NODE_VERSION=18
 FROM ubuntu:22.04 AS app
 
 ARG PHP_VERSION
@@ -53,49 +52,18 @@ RUN chmod 755 /usr/local/bin/control-server /qa-entrypoint \
     && a2ensite laravel
 
 COPY . /var/www/html
+# The shared UI consists of static files; copy its assets directly.
+COPY resources/public/ /var/www/html/public/
 WORKDIR /var/www/html
 
 RUN composer install --optimize-autoloader --no-dev \
     && mkdir -p storage/logs \
-    && php artisan optimize:clear \
     && chown -R www-data:www-data /var/www/html \
     && echo "MAILTO=\"\"\n* * * * * www-data /usr/bin/php /var/www/html/artisan schedule:run" > /etc/cron.d/laravel \
     && sed -i='' '/->withMiddleware(function (Middleware \$middleware) {/a\
         \$middleware->trustProxies(at: "*");\
     ' bootstrap/app.php; \
     rm -rf /var/www/html/.qa-control-tests
-
-FROM node:${NODE_VERSION} AS assets
-
-WORKDIR /app
-COPY . .
-COPY --from=app /var/www/html/vendor /app/vendor
-RUN if [ -f "vite.config.js" ]; then \
-        ASSET_CMD="build"; \
-    else \
-        ASSET_CMD="production"; \
-    fi; \
-    if [ -f "yarn.lock" ]; then \
-        yarn install --frozen-lockfile; \
-        yarn $ASSET_CMD; \
-    elif [ -f "pnpm-lock.yaml" ]; then \
-        corepack enable && corepack prepare pnpm@latest-8 --activate; \
-        pnpm install --frozen-lockfile; \
-        pnpm run $ASSET_CMD; \
-    elif [ -f "package-lock.json" ]; then \
-        npm ci --no-audit; \
-        npm run $ASSET_CMD; \
-    else \
-        npm install; \
-        npm run $ASSET_CMD; \
-    fi
-
-FROM app
-
-COPY --from=assets /app/public /var/www/html/public-npm
-RUN rsync -ar /var/www/html/public-npm/ /var/www/html/public/ \
-    && rm -rf /var/www/html/public-npm \
-    && chown -R www-data:www-data /var/www/html/public
 
 EXPOSE 8080 8081
 ENTRYPOINT ["/usr/bin/tini", "--", "/qa-entrypoint"]

@@ -3,11 +3,13 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'zen-demo-php'
+app = 'zen-frankenphp-worker'
 primary_region = 'ams'
-console_command = 'php /var/www/html/artisan tinker'
+console_command = 'frankenphp php-cli /var/www/html/artisan tinker'
 
 [build]
+  dockerfile = "Dockerfile.frankenphp"
+  build-target = "worker"
   [build.args]
     PHP_VERSION = '8.2'
 
@@ -19,7 +21,6 @@ console_command = 'php /var/www/html/artisan tinker'
   SESSION_DRIVER = 'cookie'
   SESSION_SECURE_COOKIE = 'true'
   DB_CONNECTION = "pgsql"
-  AIKIDO_FEATURE_SSE = 'true'
 
 [http_service]
   internal_port = 8080
@@ -30,6 +31,6 @@ console_command = 'php /var/www/html/artisan tinker'
   processes = ['app']
 
 [[vm]]
-  memory = '1024mb'
-  cpu_kind = 'shared'
+  memory = '2048mb'
+  cpu_kind = 'performance'
   cpus = 1
