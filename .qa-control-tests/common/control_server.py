@@ -93,7 +93,7 @@ def live_pid(pid):
                 line for line in status_file if line.startswith("State:")
             )
         return "Z" not in state
-    except (FileNotFoundError, PermissionError, StopIteration):
+    except (OSError, StopIteration):
         return False
 
 
