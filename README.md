@@ -12,21 +12,13 @@ One Laravel app for PHP-FPM, FrankenPHP classic, and FrankenPHP worker mode.
 All three use the same routes, dependencies, UI submodule, and firewall version
 in `.fly/scripts/aikido.sh`.
 
-## Setup
+## Build
 
 ```sh
 git submodule update --init --recursive
-cp .env.example .env
 ```
 
-Set `APP_KEY` in `.env` (a Laravel base64 key) and `DATABASE_URL` to a reachable
-PostgreSQL database, for example
-`postgres://username:password@host.docker.internal:5432/aikido?sslmode=disable`.
-Set `AIKIDO_TOKEN` to connect the demo to Aikido.
-
-## Run
-
-Choose one build command, then run the image:
+Choose the runtime to build:
 
 ```sh
 # PHP-FPM with Nginx (default)
@@ -37,13 +29,31 @@ docker build -f Dockerfile.frankenphp --target classic -t zen-demo-php:dev .
 
 # FrankenPHP worker
 docker build -f Dockerfile.frankenphp --target worker -t zen-demo-php:dev .
-
-docker run -p 8080:8080 --env-file .env --name zen-demo-php --rm zen-demo-php:dev
 ```
 
 FrankenPHP worker mode uses `.fly/frankenphp/worker.php` as its front controller,
 including the Aikido request lifecycle hooks and Laravel state cleanup from the
 worker demo. The PHP-FPM QA Dockerfiles also use this shared application.
+
+## Run
+
+Copy the example settings:
+
+```sh
+cp .env.example .env
+```
+
+Set these values in `.env`, replacing existing entries or appending overrides at the end:
+
+- `APP_KEY`: a Laravel base64 encryption key.
+- `DATABASE_URL`: the PostgreSQL connection URL.
+- `AIKIDO_TOKEN`: the token connecting the demo to Aikido.
+
+Then run:
+
+```sh
+docker run -p 8080:8080 --env-file .env --name zen-demo-php --rm zen-demo-php:dev
+```
 
 ## Deploy
 
