@@ -19,6 +19,7 @@ Route::get('/test_user_blocking', [HomeController::class, 'userBlock']);
 // API routes
 Route::get('/clear', [ApiController::class, 'clear']);
 Route::get('/api/pets', [ApiController::class, 'getPets']);
+Route::get('/api/custom-event', [ApiController::class, 'customEvent']);
 Route::post('/api/create', [ApiController::class, 'createPet']);
 Route::post('/api/create-form', [ApiController::class, 'createPet']);
 Route::post('/api/execute', [ApiController::class, 'executeCommandPost']);
