@@ -8,6 +8,21 @@ use App\Helpers\Helpers;
 
 class ApiController extends Controller
 {
+    public function customEvent(Request $request)
+    {
+        $count = filter_var($request->query('count', 1), FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => 1, 'max_range' => 100],
+        ]);
+        if ($count === false) {
+            return response('count must be an integer between 1 and 100', 400);
+        }
+
+        for ($index = 0; $index < $count; $index++) {
+            \aikido\track('user.login_failed');
+        }
+        return 'Events tracked';
+    }
+
     public function clear()
     {
         DatabaseHelper::clearAll();
