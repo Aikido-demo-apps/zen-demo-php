@@ -1,12 +1,9 @@
-# syntax = docker/dockerfile:experimental
+# syntax=docker/dockerfile:1
 
-ARG PHP_VERSION=8.2
-FROM ubuntu:22.04 as base
+ARG PHP_VERSION=8.4.27
+FROM php:${PHP_VERSION}-fpm-bookworm
 LABEL fly_launch_runtime="laravel"
 
-# PHP_VERSION needs to be repeated here
-# See https://docs.docker.com/engine/reference/builder/#understand-how-arg-and-from-interact
-ARG PHP_VERSION
 ENV DEBIAN_FRONTEND=noninteractive \
     COMPOSER_ALLOW_SUPERUSER=1 \
     COMPOSER_HOME=/composer \
@@ -24,44 +21,31 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PHP_UPLOAD_MAX_FILE_SIZE=100M \
     PHP_ALLOW_URL_FOPEN=Off
 
-# Prepare base container:
-# 1. Install PHP, Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-COPY .fly/php/ondrej_ubuntu_php.gpg /etc/apt/trusted.gpg.d/ondrej_ubuntu_php.gpg
-ADD .fly/php/packages/${PHP_VERSION}.txt /tmp/php-packages.txt
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gnupg2 ca-certificates git-core curl zip unzip \
-                                                  rsync vim-tiny htop sqlite3 nginx supervisor cron \
-    && ln -sf /usr/bin/vim.tiny /etc/alternatives/vim \
-    && ln -sf /etc/alternatives/vim /usr/bin/vim \
-    && echo "deb http://ppa.launchpad.net/ondrej/php/ubuntu jammy main" > /etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list \
-    && apt-get update \
-    && apt-get -y --no-install-recommends install $(cat /tmp/php-packages.txt) \
-    && ln -sf /usr/sbin/php-fpm${PHP_VERSION} /usr/sbin/php-fpm \
-    && mkdir -p /var/www/html/public && echo "index" > /var/www/html/public/index.php \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/*
+    && apt-get install -y --no-install-recommends ca-certificates curl git unzip sqlite3 nginx supervisor cron procps libpq-dev \
+    && docker-php-ext-install -j"$(nproc)" pdo_pgsql pgsql \
+    && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
+    && mkdir -p /run/php \
+    && rm -rf /var/lib/apt/lists/*
 
-# 2. Copy config files to proper locations
 COPY .fly/nginx/ /etc/nginx/
-COPY .fly/fpm/ /etc/php/${PHP_VERSION}/fpm/
+# Load after the image's pool settings so our Unix socket and limits take precedence.
+COPY .fly/fpm/pool.d/www.conf /usr/local/etc/php-fpm.d/zzz-app.conf
 COPY .fly/supervisor/ /etc/supervisor/
 COPY .fly/entrypoint.sh /entrypoint
 COPY .fly/start-nginx.sh /usr/local/bin/start-nginx
 RUN chmod 754 /usr/local/bin/start-nginx
 
-# 3. Copy application code, skipping files based on .dockerignore
 COPY . /var/www/html
-# The shared UI consists of static files; copy its assets directly.
 COPY resources/public/ /var/www/html/public/
 WORKDIR /var/www/html
 
-# 4. Setup application dependencies
 RUN composer install --optimize-autoloader --no-dev \
     && mkdir -p storage/logs \
     && chown -R www-data:www-data /var/www/html \
-    && echo "MAILTO=\"\"\n* * * * * www-data /usr/bin/php /var/www/html/artisan schedule:run" > /etc/cron.d/laravel \
+    && echo "MAILTO=\"\"\n* * * * * www-data /usr/local/bin/php /var/www/html/artisan schedule:run" > /etc/cron.d/laravel \
     && sed -i='' '/->withMiddleware(function (Middleware \$middleware) {/a\
         \$middleware->trustProxies(at: "*");\
     ' bootstrap/app.php; \
@@ -69,7 +53,6 @@ RUN composer install --optimize-autoloader --no-dev \
 
 ENV AIKIDO_BLOCKING=true
 
-# 5. Setup Entrypoint
 EXPOSE 8080
 
 ENTRYPOINT ["/entrypoint"]

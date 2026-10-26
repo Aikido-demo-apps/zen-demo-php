@@ -1,9 +1,9 @@
-# syntax = docker/dockerfile:experimental
+# syntax=docker/dockerfile:1
 
-ARG PHP_VERSION=8.2
 FROM ubuntu:22.04 AS app
 
-ARG PHP_VERSION
+ARG PHP_VERSION=8.4.27
+ARG PHP_SERIES=8.4
 ENV DEBIAN_FRONTEND=noninteractive \
     COMPOSER_ALLOW_SUPERUSER=1 \
     COMPOSER_HOME=/composer \
@@ -21,7 +21,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PHP_UPLOAD_MAX_FILE_SIZE=100M \
     PHP_ALLOW_URL_FOPEN=Off \
     QA_SERVER=nginx-php-fpm \
-    QA_PHP_VERSION=${PHP_VERSION} \
+    QA_PHP_VERSION=${PHP_SERIES} \
     AIKIDO_BLOCKING=true \
     AIKIDO_BLOCK=true \
     AIKIDO_DISK_LOGS=true \
@@ -29,7 +29,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 COPY .fly/php/ondrej_ubuntu_php.gpg /etc/apt/trusted.gpg.d/ondrej_ubuntu_php.gpg
-ADD .fly/php/packages/${PHP_VERSION}.txt /tmp/php-packages.txt
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gnupg2 ca-certificates git-core curl zip unzip \
@@ -38,21 +37,37 @@ RUN apt-get update \
     && ln -sf /etc/alternatives/vim /usr/bin/vim \
     && echo "deb http://ppa.launchpad.net/ondrej/php/ubuntu jammy main" > /etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list \
     && apt-get update \
-    && apt-get -y --no-install-recommends install $(cat /tmp/php-packages.txt) \
+    && apt-get -y --no-install-recommends install \
+        php${PHP_SERIES}-bcmath \
+        php${PHP_SERIES}-cli \
+        "php${PHP_SERIES}-common=${PHP_VERSION}-*" \
+        php${PHP_SERIES}-curl \
+        php${PHP_SERIES}-gd \
+        php${PHP_SERIES}-intl \
+        php${PHP_SERIES}-mbstring \
+        php${PHP_SERIES}-mysql \
+        php${PHP_SERIES}-pgsql \
+        php${PHP_SERIES}-redis \
+        php${PHP_SERIES}-soap \
+        php${PHP_SERIES}-sqlite3 \
+        php${PHP_SERIES}-xml \
+        php${PHP_SERIES}-zip \
+        php${PHP_SERIES}-swoole \
+        php${PHP_SERIES}-fpm \
     && mkdir -p /var/www/html/public \
     && echo "index" > /var/www/html/public/index.php \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/*
 
 COPY .fly/nginx/ /etc/nginx/
-COPY .fly/fpm/ /etc/php/${PHP_VERSION}/fpm/
+COPY .fly/fpm/ /etc/php/${PHP_SERIES}/fpm/
 COPY .qa-control-tests/common/control_server.py /usr/local/bin/control-server
 COPY .qa-control-tests/common/entrypoint.sh /qa-entrypoint
 RUN chmod 755 /usr/local/bin/control-server /qa-entrypoint \
     && sed -i 's/^daemon off;/daemon on;/' /etc/nginx/nginx.conf \
-    && sed -i 's/^daemonize = no/daemonize = yes/' /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && sed -i "s|^error_log = /proc/self/fd/2|error_log = /var/log/php${PHP_VERSION}-fpm.log|" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf \
-    && sed -i "/^\[global\]/a pid = /run/php/php${PHP_VERSION}-fpm.pid" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
+    && sed -i 's/^daemonize = no/daemonize = yes/' /etc/php/${PHP_SERIES}/fpm/pool.d/www.conf \
+    && sed -i "s|^error_log = /proc/self/fd/2|error_log = /var/log/php${PHP_SERIES}-fpm.log|" /etc/php/${PHP_SERIES}/fpm/pool.d/www.conf \
+    && sed -i "/^\[global\]/a pid = /run/php/php${PHP_SERIES}-fpm.pid" /etc/php/${PHP_SERIES}/fpm/pool.d/www.conf
 
 COPY . /var/www/html
 # The shared UI consists of static files; copy its assets directly.

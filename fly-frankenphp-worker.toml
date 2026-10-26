@@ -11,7 +11,7 @@ console_command = 'frankenphp php-cli /var/www/html/artisan tinker'
   dockerfile = "Dockerfile.frankenphp"
   build-target = "worker"
   [build.args]
-    PHP_VERSION = '8.2'
+    PHP_VERSION = '8.4.27'
 
 [env]
   APP_ENV = 'production'
