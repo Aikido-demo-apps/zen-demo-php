@@ -9,7 +9,7 @@ console_command = 'php /var/www/html/artisan tinker'
 
 [build]
   [build.args]
-    PHP_VERSION = '8.2'
+    PHP_VERSION = '8.4.27'
 
 [env]
   APP_ENV = 'production'
