@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request
 app = Flask(__name__)
 
 SERVER_MODE = os.environ.get("QA_SERVER", "")
-PHP_VERSION = os.environ.get("QA_PHP_VERSION", "8.2")
+PHP_VERSION = os.environ.get("QA_PHP_VERSION", "8.4")
 
 
 def process_spec(name, pidfile, pgrep, commands, logs):
