@@ -9,6 +9,7 @@ jobs:
   deploy:
     name: Deploy ${{ matrix.runtime }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     concurrency: deploy-${{ matrix.runtime }}
     strategy:
       fail-fast: false
