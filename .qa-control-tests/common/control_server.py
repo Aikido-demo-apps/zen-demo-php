@@ -13,7 +13,6 @@ from flask import Flask, jsonify, request
 app = Flask(__name__)
 
 SERVER_MODE = os.environ.get("QA_SERVER", "")
-PHP_VERSION = os.environ.get("QA_PHP_VERSION", "8.4")
 
 
 def process_spec(name, pidfile, pgrep, commands, logs):
@@ -62,16 +61,16 @@ NGINX = process_spec(
 
 FPM = process_spec(
     "fpm",
-    f"/run/php/php{PHP_VERSION}-fpm.pid",
+    "/run/php/php-fpm.pid",
     ["pgrep", "-f", "php-fpm: master"],
     {
-        "start": [[f"php-fpm{PHP_VERSION}"]],
+        "start": [["php-fpm"]],
         "stop": [["kill", "-TERM", "{pid}"]],
-        "restart": [["kill", "-TERM", "{pid}"], [f"php-fpm{PHP_VERSION}"]],
+        "restart": [["kill", "-TERM", "{pid}"], ["php-fpm"]],
         "graceful-restart": [["kill", "-USR2", "{pid}"]],
         "graceful-stop": [["kill", "-TERM", "{pid}"]],
     },
-    {"error": f"/var/log/php{PHP_VERSION}-fpm.log"},
+    {"error": "/var/log/php-fpm.log"},
 )
 
 MODES = {
