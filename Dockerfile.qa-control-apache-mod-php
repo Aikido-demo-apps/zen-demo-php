@@ -1,9 +1,7 @@
 # syntax=docker/dockerfile:1
 
-FROM ubuntu:22.04 AS app
-
 ARG PHP_VERSION=8.4.27
-ARG PHP_SERIES=8.4
+FROM php:${PHP_VERSION}-apache-bookworm
 ENV DEBIAN_FRONTEND=noninteractive \
     COMPOSER_ALLOW_SUPERUSER=1 \
     COMPOSER_HOME=/composer \
@@ -17,46 +15,23 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PHP_UPLOAD_MAX_FILE_SIZE=100M \
     PHP_ALLOW_URL_FOPEN=Off \
     QA_SERVER=apache-mod-php \
-    QA_PHP_VERSION=${PHP_SERIES} \
     AIKIDO_BLOCKING=true \
     AIKIDO_BLOCK=true \
     AIKIDO_DISK_LOGS=true \
     AIKIDO_DEBUG=true
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-COPY .fly/php/ondrej_ubuntu_php.gpg /etc/apt/trusted.gpg.d/ondrej_ubuntu_php.gpg
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gnupg2 ca-certificates git-core curl zip unzip \
-        rsync vim-tiny htop sqlite3 apache2 cron python3-flask procps tini \
-    && ln -sf /usr/bin/vim.tiny /etc/alternatives/vim \
-    && ln -sf /etc/alternatives/vim /usr/bin/vim \
-    && echo "deb http://ppa.launchpad.net/ondrej/php/ubuntu jammy main" > /etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list \
-    && apt-get update \
-    && apt-get -y --no-install-recommends install \
-        php${PHP_SERIES}-bcmath \
-        php${PHP_SERIES}-cli \
-        "php${PHP_SERIES}-common=${PHP_VERSION}-*" \
-        php${PHP_SERIES}-curl \
-        php${PHP_SERIES}-gd \
-        php${PHP_SERIES}-intl \
-        php${PHP_SERIES}-mbstring \
-        php${PHP_SERIES}-mysql \
-        php${PHP_SERIES}-pgsql \
-        php${PHP_SERIES}-redis \
-        php${PHP_SERIES}-soap \
-        php${PHP_SERIES}-sqlite3 \
-        php${PHP_SERIES}-xml \
-        php${PHP_SERIES}-zip \
-        php${PHP_SERIES}-swoole \
-        libapache2-mod-php${PHP_SERIES} \
-    && a2enmod rewrite headers php${PHP_SERIES} \
+    && apt-get install -y --no-install-recommends ca-certificates curl git unzip \
+        sqlite3 cron python3-flask procps tini libpq-dev \
+    && docker-php-ext-install -j"$(nproc)" pdo_pgsql pgsql \
+    && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
+    && a2enmod rewrite headers \
+    && rm /var/log/apache2/access.log /var/log/apache2/error.log /var/log/apache2/other_vhosts_access.log \
     && a2dissite 000-default \
-    && mkdir -p /var/www/html/public \
-    && echo "index" > /var/www/html/public/index.php \
     && echo "ServerName localhost" >> /etc/apache2/apache2.conf \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/*
+    && rm -rf /var/lib/apt/lists/*
 
 COPY .qa-control-tests/apache-mod-php/apache.conf /etc/apache2/sites-available/laravel.conf
 COPY .qa-control-tests/apache-mod-php/ports.conf /etc/apache2/ports.conf
@@ -73,7 +48,7 @@ WORKDIR /var/www/html
 RUN composer install --optimize-autoloader --no-dev \
     && mkdir -p storage/logs \
     && chown -R www-data:www-data /var/www/html \
-    && echo "MAILTO=\"\"\n* * * * * www-data /usr/bin/php /var/www/html/artisan schedule:run" > /etc/cron.d/laravel \
+    && echo "MAILTO=\"\"\n* * * * * www-data /usr/local/bin/php /var/www/html/artisan schedule:run" > /etc/cron.d/laravel \
     && sed -i='' '/->withMiddleware(function (Middleware \$middleware) {/a\
         \$middleware->trustProxies(at: "*");\
     ' bootstrap/app.php; \
