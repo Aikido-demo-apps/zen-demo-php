@@ -64,6 +64,24 @@ class Helpers
         }
     }
 
+    public static function connectToStoredDestination(int $index): void
+    {
+        $hosts = ['evil-stored-ssrf-hostname', 'metadata.google.internal', 'metadata.goog', '169.254.169.254'];
+        if (!isset($hosts[$index])) {
+            throw new \InvalidArgumentException('Unknown QA destination');
+        }
+
+        $curl = curl_init('http://' . $hosts[$index]);
+        curl_setopt_array($curl, [
+            CURLOPT_CONNECT_ONLY => true,
+            CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_RETURNTRANSFER => true,
+        ]);
+        if (curl_exec($curl) === false) {
+            throw new \RuntimeException(curl_error($curl));
+        }
+    }
+
     public static function readFile($filePath)
     {
         return self::readPath("/var/www/html/resources/blogs/" . $filePath);
