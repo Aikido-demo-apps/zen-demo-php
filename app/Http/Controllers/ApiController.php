@@ -88,6 +88,18 @@ class ApiController extends Controller
         return $response;
     }
 
+    public function storedSsrf(Request $request)
+    {
+        Helpers::connectToStoredDestination((int) $request->input('urlIndex', 0));
+        return 'Success';
+    }
+
+    public function storedSsrfInBackground()
+    {
+        exec('php ' . escapeshellarg(base_path('artisan')) . ' demo:stored-ssrf >/dev/null 2>&1 &');
+        return 'Scheduled';
+    }
+
     public function readFile(Request $request)
     {
         $filePath = $request->query('path');
